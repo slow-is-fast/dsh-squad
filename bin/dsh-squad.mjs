@@ -151,27 +151,33 @@ function planCommand(goal, tasks) {
 
   log('planCommand called with goal:', goal || '(none)', 'tasks:', tasks || '(none)');
 
+  let taskList;
+
+  if (goal) {
+    log('Generating task suggestions from goal');
+    taskList = suggestTasks(goal);
+  } else {
+    taskList = loadTasks(tasks);
+  }
+
+  if (jsonOutput) {
+    outputJson({ goal: goal || null, tasks: taskList });
+    return;
+  }
+
   output('\n📋 Squad Plan\n');
-  
+
   if (goal) {
     output(`Goal: ${goal}\n`);
-    
-    // Generate task breakdown suggestion
-    log('Generating task suggestions from goal');
-    const suggestedTasks = suggestTasks(goal);
     output('Suggested task breakdown:\n');
-    printTasks(suggestedTasks);
-    
-    output('\nExecution order:\n');
-    printExecutionOrder(suggestedTasks);
-  } else if (tasks) {
-    const taskList = loadTasks(tasks);
+    printTasks(taskList);
+  } else {
     output(`Loaded ${taskList.length} tasks\n`);
     printTasks(taskList);
-    
-    output('\nExecution order:\n');
-    printExecutionOrder(taskList);
   }
+
+  output('\nExecution order:\n');
+  printExecutionOrder(taskList);
 }
 
 /**
@@ -215,7 +221,7 @@ function validateCommand(tasksFile) {
       success: errors.length === 0,
       tasksCount: tasks.length,
       uniqueAgents: new Set(tasks.map(t => t.agent)).size,
-      errors: errors.length > 0 ? errors : undefined
+      errors
     });
     if (errors.length > 0) {
       process.exit(1);
@@ -298,6 +304,20 @@ function configCommand(action, ...args) {
       }
       
       const agentConfig = config.agents[agentName];
+
+      if (jsonOutput) {
+        outputJson({
+          agent: agentName,
+          configured: Boolean(agentConfig),
+          model: agentConfig?.model || config.defaultModel,
+          provider: agentConfig?.provider ?? null,
+          thinking: agentConfig?.thinking ?? null,
+          tools: agentConfig?.tools ?? null,
+          defaultModel: config.defaultModel
+        });
+        return;
+      }
+
       if (!agentConfig) {
         output(`${agentName}: using default model (${config.defaultModel})`);
         return;
@@ -324,6 +344,12 @@ function configCommand(action, ...args) {
       }
 
       const { path } = saveAgentConfig(agentName, property, value, { force: forceWrite });
+
+      if (jsonOutput) {
+        outputJson({ agent: agentName, property, value, path, forced: forceWrite });
+        break;
+      }
+
       output(`✓ Set ${agentName}.${property} = ${value}`);
       output(`  Written to: ${path}`);
       if (forceWrite) {
@@ -340,6 +366,11 @@ function configCommand(action, ...args) {
 
       const { path, removed } = unsetAgentConfig(agentName, property || null);
 
+      if (jsonOutput) {
+        outputJson({ agent: agentName, property: property || null, removed, path });
+        break;
+      }
+
       if (removed) {
         output(`✓ Unset ${property ? `${agentName}.${property}` : agentName}`);
         output(`  Written to: ${path}`);
@@ -351,14 +382,35 @@ function configCommand(action, ...args) {
     }
 
     case 'list': {
+      const catalog = loadModelCatalog();
+      const agentList = loadAgents().map(agent => {
+        const cfg = config.agents[agent.name];
+
+        return {
+          name: agent.name,
+          model: agent.model,
+          configured: Boolean(cfg),
+          thinking: cfg?.thinking ?? null,
+          tools: cfg?.tools ?? null
+        };
+      });
+
+      if (jsonOutput) {
+        outputJson({
+          defaultModel: config.defaultModel,
+          catalog: catalog ? { path: catalog.path, models: catalog.models.size } : null,
+          agents: agentList
+        });
+        break;
+      }
+
       output('\n⚙️  Agents\n');
 
-      for (const agent of loadAgents()) {
-        const cfg = config.agents[agent.name];
+      for (const agent of agentList) {
         const marks = [
-          cfg ? 'configured' : 'default',
-          cfg?.thinking ? `thinking:${cfg.thinking}` : null,
-          cfg?.tools ? `tools:${cfg.tools.length}` : null
+          agent.configured ? 'configured' : 'default',
+          agent.thinking ? `thinking:${agent.thinking}` : null,
+          agent.tools ? `tools:${agent.tools.length}` : null
         ].filter(Boolean).join('  ');
 
         output(`  ${agent.name.padEnd(12)} ${String(agent.model).padEnd(28)} ${marks}`);
@@ -366,7 +418,6 @@ function configCommand(action, ...args) {
 
       output(`\nDefault model: ${config.defaultModel}`);
 
-      const catalog = loadModelCatalog();
       if (catalog) {
         output(`Model catalog: ${catalog.path} (${catalog.models.size} models)`);
       }
@@ -383,10 +434,21 @@ function configCommand(action, ...args) {
         );
       }
 
+      const sorted = [...catalog.models.entries()]
+        .sort(([a], [b]) => a.localeCompare(b));
+
+      if (jsonOutput) {
+        outputJson({
+          source: catalog.path,
+          models: Object.fromEntries(sorted),
+          total: catalog.models.size
+        });
+        break;
+      }
+
       output('\n🧠 Known Models\n');
 
-      for (const [model, providers] of [...catalog.models.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))) {
+      for (const [model, providers] of sorted) {
         output(`  ${model.padEnd(28)} ${providers.join(', ')}`);
       }
 
@@ -424,6 +486,18 @@ function configCommand(action, ...args) {
       }
 
       const source = configSource();
+
+      if (jsonOutput) {
+        outputJson({
+          success: errors.length === 0,
+          configFile: source.path,
+          catalogFile: catalog ? catalog.path : null,
+          errors
+        });
+        if (errors.length > 0) process.exit(1);
+        break;
+      }
+
       output(`Config file: ${source.path}`);
       if (catalog) {
         output(`Model catalog: ${catalog.path}`);

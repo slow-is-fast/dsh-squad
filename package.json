@@ -9,14 +9,18 @@
   "files": [
     "SKILL.md",
     "README.md",
+    "LICENSE",
     "bin/",
     "lib/",
     "agents/",
     "config/",
-    "examples/"
+    "examples/",
+    "scripts/",
+    "tests/"
   ],
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "sync:skill": "node scripts/sync-skill.mjs"
   },
   "keywords": [
     "dsh",

@@ -4,14 +4,13 @@
 
 import { test, describe, beforeEach, afterEach, mock } from 'node:test';
 import assert from 'node:assert';
-import { spawn } from 'node:child_process';
 import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { runCLI } from './helpers/run-cli.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const cliPath = join(__dirname, '..', 'bin', 'dsh-squad.mjs');
 
 // ============================================================================
 // CLI Integration Tests
@@ -465,45 +464,3 @@ describe('deps command', () => {
     assert.ok(result.stdout.includes('Level 0:'));
   });
 });
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-function runCLI(args, options = {}) {
-  return new Promise((resolve) => {
-    const child = spawn('node', [cliPath, ...args], {
-      cwd: options.cwd || join(__dirname, '..'),
-      env: { ...process.env, ...(options.env || {}) }
-    });
-    
-    let stdout = '';
-    let stderr = '';
-    
-    child.stdout.on('data', (data) => {
-      stdout += data.toString();
-    });
-    
-    child.stderr.on('data', (data) => {
-      stderr += data.toString();
-    });
-    
-    child.on('close', (code) => {
-      resolve({
-        code,
-        stdout,
-        stderr
-      });
-    });
-    
-    // Set timeout
-    setTimeout(() => {
-      child.kill();
-      resolve({
-        code: -1,
-        stdout,
-        stderr: 'Timeout'
-      });
-    }, 5000);
-  });
-}

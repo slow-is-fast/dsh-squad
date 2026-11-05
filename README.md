@@ -18,6 +18,13 @@ Multi-agent collaboration skill for DeepSeek Harness (DSH). Decomposes complex t
 cp -r dsh-squad ~/.agents/skills/dsh-squad
 ```
 
+Or, from a clone, mirror it with the sync script (see
+[Updating an Installed Skill](#updating-an-installed-skill)):
+
+```bash
+npm run sync:skill
+```
+
 Restart DSH (or start a new session) so the skill catalog is re-read.
 
 ## Quick Start
@@ -145,6 +152,11 @@ node bin/dsh-squad.mjs deps tasks.json
 
 Global flags: `--json`, `--quiet`/`-q`, `--verbose`, `--version`/`-v`, `--help`/`-h`.
 
+Every read command (`plan`, `agents`, `validate`, `deps`, `config show|get|list|models|validate`)
+and the two write commands (`config set|unset`) emit a single parseable JSON object
+with `--json`. That contract is enforced by `tests/json-contract.test.mjs`, so a
+command that silently prints nothing fails CI.
+
 Errors exit non-zero with a stable code: `VALIDATION_ERROR`, `FILE_ERROR`,
 `PARSE_ERROR`, `COMMAND_ERROR`.
 
@@ -154,15 +166,33 @@ Errors exit non-zero with a stable code: `VALIDATION_ERROR`, `FILE_ERROR`,
 npm test    # node --test tests/*.test.mjs
 ```
 
-156 tests across five suites:
+177 tests across seven suites — also run in CI on Node 18, 20, and 22
+(`.github/workflows/test.yml`):
 
 | Suite | Covers |
 |---|---|
 | `tests/dsh-squad.test.mjs` | graph algorithms, task loading, agent loading, validation |
 | `tests/suggest-tasks.test.mjs` | template matching, auto-dependencies, default fallback |
-| `tests/config.test.mjs` | config precedence, write target, value validation |
+| `tests/config.test.mjs` | config precedence, write target, value validation, unset, tools, model catalog |
 | `tests/cli-commands.test.mjs` | end-to-end CLI output, flags, exit codes, typed errors |
-| `tests/error-classes.test.mjs` | typed error hierarchy and the real throw sites |
+| `tests/error-classes.test.mjs` | typed error hierarchy, real throw sites, `formatError` |
+| `tests/json-contract.test.mjs` | every `--json` command emits parseable JSON |
+| `tests/sync-skill.test.mjs` | skill mirroring, stale cleanup, destructive-target guards |
+
+## Updating an Installed Skill
+
+The skill directory under `~/.agents/skills/` is a copy, not a git checkout, so
+repo edits do not reach DSH until it is refreshed:
+
+```bash
+npm run sync:skill              # mirror into ~/.agents/skills/dsh-squad
+npm run sync:skill -- --dry-run # show what would change
+npm run sync:skill -- <target>  # custom destination
+```
+
+The script refuses to overwrite the repo itself, a subdirectory of it, or a
+non-empty directory without `SKILL.md` (unless `--force`). It removes stale
+entries and preserves `.git`. Restart DSH afterwards to reload `SKILL.md`.
 
 ## Architecture
 
@@ -174,14 +204,17 @@ dsh-squad/
 ├── lib/
 │   ├── core.mjs              # Config resolution, task/agent loading, DAG analysis
 │   ├── templates.mjs         # Goal → task suggestion
-│   └── errors.mjs            # Typed error hierarchy
+│   └── errors.mjs            # Typed error hierarchy + formatError
 ├── agents/                   # 12 agent definitions
 ├── config/
 │   ├── squad.config.json     # Model configuration (skill-local)
 │   ├── squad-templates.json  # Task suggestion templates
 │   └── models.json           # Known model catalog (typo guard)
 ├── examples/                 # Example task breakdowns
-└── tests/                    # 156 tests
+├── scripts/
+│   └── sync-skill.mjs        # Mirror the repo into an installed skill
+├── tests/                    # 177 tests (tests/helpers/ = shared CLI runner)
+└── .github/workflows/        # CI: npm test on Node 18/20/22
 ```
 
 ## How It Works
@@ -195,4 +228,4 @@ dsh-squad/
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).

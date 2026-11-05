@@ -521,6 +521,10 @@ node bin/dsh-squad.mjs validate tasks.json
 node bin/dsh-squad.mjs deps tasks.json
 ```
 
+Add `--json` to any read command (`plan`, `agents`, `validate`, `deps`,
+`config show|get|list|models|validate`) or to `config set`/`unset` to get a
+single JSON object instead of text; the other commands are text-only.
+
 ## Example Workflow
 
 ### Request: "Build a blog API with authentication, tests, and docs"
