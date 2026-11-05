@@ -16,7 +16,8 @@ import {
   ValidationError,
   FileError,
   ParseError,
-  CommandError
+  CommandError,
+  formatError
 } from '../lib/errors.mjs';
 import { loadTasks, validateTasks } from '../lib/core.mjs';
 
@@ -140,5 +141,64 @@ describe('real throw sites in lib/core.mjs', () => {
       () => validateTasks({ foo: 1 }),
       error => error instanceof ValidationError && /expects an array/.test(error.message)
     );
+  });
+});
+
+describe('formatError', () => {
+  function capture(fn) {
+    const lines = [];
+    const originalError = console.error;
+    console.error = (...args) => lines.push(args.join(' '));
+    try {
+      fn();
+    } finally {
+      console.error = originalError;
+    }
+    return lines;
+  }
+
+  test('renders a typed error with code and details', () => {
+    const lines = capture(() => formatError(new FileError('missing', '/tmp/x.json')));
+
+    assert.deepStrictEqual(lines, [
+      '\n❌ Error [FILE_ERROR]: missing',
+      '   Details: /tmp/x.json',
+      ''
+    ]);
+  });
+
+  test('omits the details line when there are none', () => {
+    const lines = capture(() => formatError(new CommandError('nope')));
+
+    assert.deepStrictEqual(lines, ['\n❌ Error [COMMAND_ERROR]: nope', '']);
+  });
+
+  test('renders unexpected errors without a stack by default', () => {
+    const saved = process.env.DEBUG;
+    delete process.env.DEBUG;
+    try {
+      const lines = capture(() => formatError(new TypeError('boom')));
+
+      assert.deepStrictEqual(lines, ['\n❌ Unexpected error: boom\n']);
+    } finally {
+      if (saved !== undefined) process.env.DEBUG = saved;
+    }
+  });
+
+  test('prints the stack for unexpected errors when DEBUG is set', () => {
+    const saved = process.env.DEBUG;
+    process.env.DEBUG = '1';
+    try {
+      const lines = capture(() => formatError(new TypeError('boom')));
+
+      assert.strictEqual(lines.length, 2);
+      assert.ok(lines[1].includes('TypeError: boom'));
+    } finally {
+      if (saved === undefined) {
+        delete process.env.DEBUG;
+      } else {
+        process.env.DEBUG = saved;
+      }
+    }
   });
 });

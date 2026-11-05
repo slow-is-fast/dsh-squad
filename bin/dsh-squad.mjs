@@ -24,6 +24,8 @@ import {
   loadAgents, 
   loadConfig,
   saveAgentConfig,
+  unsetAgentConfig,
+  loadModelCatalog,
   configSource,
   validateTasks, 
   buildDependencyGraph, 
@@ -32,7 +34,7 @@ import {
   countParallelTasks 
 } from '../lib/core.mjs';
 import { suggestTasks } from '../lib/templates.mjs';
-import { SquadError, ValidationError, CommandError } from '../lib/errors.mjs';
+import { formatError, ValidationError, CommandError } from '../lib/errors.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -43,6 +45,15 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 let verbose = false;
 let quiet = false;
 let jsonOutput = false;
+let forceWrite = false;
+
+/**
+ * Allow writing values that fail the model catalog check
+ * @param {boolean} value - Force mode state
+ */
+function setForce(value) {
+  forceWrite = value;
+}
 
 /**
  * Set verbose mode
@@ -95,29 +106,6 @@ function output(...args) {
 function outputJson(data) {
   if (jsonOutput) {
     console.log(JSON.stringify(data, null, 2));
-  }
-}
-
-// ============================================================================
-// Error Formatting
-// ============================================================================
-
-/**
- * Format and display error messages
- * @param {Error} error - The error to format
- */
-function formatError(error) {
-  if (error instanceof SquadError) {
-    console.error(`\n❌ Error [${error.code}]: ${error.message}`);
-    if (error.details) {
-      console.error(`   Details: ${error.details}`);
-    }
-    console.error('');
-  } else {
-    console.error(`\n❌ Unexpected error: ${error.message}\n`);
-    if (process.env.DEBUG) {
-      console.error(error.stack);
-    }
   }
 }
 
@@ -281,8 +269,14 @@ function configCommand(action, ...args) {
           for (const [name, cfg] of agents) {
             output(`  ${name}:`);
             output(`    model: ${cfg.model || '(default)'}`);
+            if (cfg.provider) {
+              output(`    provider: ${cfg.provider}`);
+            }
             if (cfg.thinking) {
               output(`    thinking: ${cfg.thinking}`);
+            }
+            if (cfg.tools) {
+              output(`    tools: ${cfg.tools.join(', ')}`);
             }
           }
         }
@@ -311,8 +305,14 @@ function configCommand(action, ...args) {
       
       output(`\n${agentName} Configuration:\n`);
       output(`  model: ${agentConfig.model || config.defaultModel}`);
+      if (agentConfig.provider) {
+        output(`  provider: ${agentConfig.provider}`);
+      }
       if (agentConfig.thinking) {
         output(`  thinking: ${agentConfig.thinking}`);
+      }
+      if (agentConfig.tools) {
+        output(`  tools: ${agentConfig.tools.join(', ')}`);
       }
       break;
     }
@@ -323,15 +323,82 @@ function configCommand(action, ...args) {
         throw new CommandError('Usage: config set <agent> <property> <value>');
       }
 
-      const { path } = saveAgentConfig(agentName, property, value);
+      const { path } = saveAgentConfig(agentName, property, value, { force: forceWrite });
       output(`✓ Set ${agentName}.${property} = ${value}`);
       output(`  Written to: ${path}`);
+      if (forceWrite) {
+        output('  (force: model catalog check bypassed)');
+      }
+      break;
+    }
+
+    case 'unset': {
+      const [agentName, property] = args;
+      if (!agentName) {
+        throw new CommandError('Usage: config unset <agent> [property]');
+      }
+
+      const { path, removed } = unsetAgentConfig(agentName, property || null);
+
+      if (removed) {
+        output(`✓ Unset ${property ? `${agentName}.${property}` : agentName}`);
+        output(`  Written to: ${path}`);
+      } else {
+        output(`= ${property ? `${agentName}.${property}` : agentName} was already unset`);
+        output(`  Checked: ${path}`);
+      }
+      break;
+    }
+
+    case 'list': {
+      output('\n⚙️  Agents\n');
+
+      for (const agent of loadAgents()) {
+        const cfg = config.agents[agent.name];
+        const marks = [
+          cfg ? 'configured' : 'default',
+          cfg?.thinking ? `thinking:${cfg.thinking}` : null,
+          cfg?.tools ? `tools:${cfg.tools.length}` : null
+        ].filter(Boolean).join('  ');
+
+        output(`  ${agent.name.padEnd(12)} ${String(agent.model).padEnd(28)} ${marks}`);
+      }
+
+      output(`\nDefault model: ${config.defaultModel}`);
+
+      const catalog = loadModelCatalog();
+      if (catalog) {
+        output(`Model catalog: ${catalog.path} (${catalog.models.size} models)`);
+      }
+      output('');
+      break;
+    }
+
+    case 'models': {
+      const catalog = loadModelCatalog();
+      if (!catalog) {
+        throw new CommandError(
+          'Model catalog not found',
+          'Set SQUAD_MODELS_PATH or create config/models.json'
+        );
+      }
+
+      output('\n🧠 Known Models\n');
+
+      for (const [model, providers] of [...catalog.models.entries()]
+        .sort(([a], [b]) => a.localeCompare(b))) {
+        output(`  ${model.padEnd(28)} ${providers.join(', ')}`);
+      }
+
+      output(`\nSource: ${catalog.path}`);
+      output(`Total: ${catalog.models.size} models\n`);
       break;
     }
       
     case 'validate': {
       const errors = [];
       const agentNames = new Set(loadAgents().map(a => a.name));
+      const catalog = loadModelCatalog();
 
       for (const name of Object.keys(config.agents)) {
         if (!agentNames.has(name)) {
@@ -343,13 +410,24 @@ function configCommand(action, ...args) {
         if (cfg.model !== undefined && (typeof cfg.model !== 'string' || cfg.model.trim() === '')) {
           errors.push(`Agent ${name} has an invalid model value`);
         }
+        if (catalog && typeof cfg.model === 'string'
+            && !catalog.models.has(cfg.model) && !forceWrite) {
+          errors.push(`Agent ${name} uses unknown model '${cfg.model}' (not listed in ${catalog.path})`);
+        }
         if (cfg.thinking != null && cfg.thinking !== 'enabled' && cfg.thinking !== 'disabled') {
           errors.push(`Agent ${name} has invalid thinking value: ${cfg.thinking}`);
+        }
+        if (cfg.tools !== undefined
+            && (!Array.isArray(cfg.tools) || cfg.tools.some(tool => typeof tool !== 'string'))) {
+          errors.push(`Agent ${name} has an invalid tools value`);
         }
       }
 
       const source = configSource();
       output(`Config file: ${source.path}`);
+      if (catalog) {
+        output(`Model catalog: ${catalog.path}`);
+      }
 
       if (errors.length === 0) {
         output('✓ Configuration is valid');
@@ -482,6 +560,11 @@ function main() {
       args = args.filter(arg => arg !== '--json');
     }
     
+    if (args.includes('--force')) {
+      setForce(true);
+      args = args.filter(arg => arg !== '--force');
+    }
+    
     // Handle --version
     if (args.includes('--version') || args.includes('-v')) {
       const packagePath = join(__dirname, '..', 'package.json');
@@ -515,6 +598,7 @@ OPTIONS:
   --verbose      Show detailed output
   --quiet, -q    Show only errors
   --json         Output in JSON format
+  --force        Bypass the model catalog check when setting a model
 
 PLAN OPTIONS:
   --goal <text>       Generate tasks from a goal description
@@ -541,7 +625,12 @@ EXAMPLES:
   
   # Manage configuration
   dsh-squad config show
+  dsh-squad config list
   dsh-squad config set architect model deepseek-v4.1-flash
+  dsh-squad config set architect thinking enabled
+  dsh-squad config set architect tools "read,write"
+  dsh-squad config unset architect thinking
+  dsh-squad config models
   dsh-squad config validate
 
 DOCUMENTATION:

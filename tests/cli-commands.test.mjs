@@ -232,7 +232,12 @@ describe('config command', () => {
       settings: { maxParallelTasks: 3 }
     }, null, 2), 'utf-8');
 
-    env = { DSH_HOME: dir, SQUAD_CONFIG_PATH: projectConfig };
+    const modelsFile = join(dir, 'models.json');
+    writeFileSync(modelsFile, JSON.stringify({
+      providers: { test: ['round-trip-model', 'cli-model', 'cli-project-model'] }
+    }), 'utf-8');
+
+    env = { DSH_HOME: dir, SQUAD_CONFIG_PATH: projectConfig, SQUAD_MODELS_PATH: modelsFile };
   });
 
   afterEach(() => {
@@ -290,6 +295,71 @@ describe('config command', () => {
     const parsed = JSON.parse(result.stdout);
     assert.strictEqual(parsed.defaultModel, 'cli-default');
     assert.strictEqual(parsed.agents.backend.model, 'cli-project-model');
+  });
+
+  test('rejects a model missing from the catalog', async () => {
+    const result = await runCLI(['config', 'set', 'architect', 'model', 'typo-model'], { env });
+
+    assert.strictEqual(result.code, 1);
+    assert.ok(result.stderr.includes('[VALIDATION_ERROR]'));
+    assert.ok(result.stderr.includes('Unknown model: typo-model'));
+  });
+
+  test('--force writes a model missing from the catalog', async () => {
+    const result = await runCLI(
+      ['config', 'set', 'architect', 'model', 'typo-model', '--force'],
+      { env }
+    );
+
+    assert.strictEqual(result.code, 0);
+    assert.ok(result.stdout.includes('force: model catalog check bypassed'));
+
+    const get = await runCLI(['config', 'get', 'architect'], { env });
+    assert.ok(get.stdout.includes('model: typo-model'));
+  });
+
+  test('set tools then get shows the list', async () => {
+    const set = await runCLI(['config', 'set', 'architect', 'tools', 'read,write'], { env });
+    assert.strictEqual(set.code, 0);
+
+    const get = await runCLI(['config', 'get', 'architect'], { env });
+    assert.ok(get.stdout.includes('tools: read, write'));
+  });
+
+  test('unset removes a property and reports it', async () => {
+    await runCLI(['config', 'set', 'architect', 'thinking', 'enabled'], { env });
+
+    const unset = await runCLI(['config', 'unset', 'architect', 'thinking'], { env });
+
+    assert.strictEqual(unset.code, 0);
+    assert.ok(unset.stdout.includes('✓ Unset architect.thinking'));
+
+    const get = await runCLI(['config', 'get', 'architect'], { env });
+    assert.ok(!get.stdout.includes('thinking:'));
+  });
+
+  test('unset of a missing property is a no-op success', async () => {
+    const result = await runCLI(['config', 'unset', 'architect', 'tools'], { env });
+
+    assert.strictEqual(result.code, 0);
+    assert.ok(result.stdout.includes('was already unset'));
+  });
+
+  test('list shows resolved models for every agent', async () => {
+    const result = await runCLI(['config', 'list'], { env });
+
+    assert.strictEqual(result.code, 0);
+    assert.ok(result.stdout.includes('architect'));
+    assert.ok(result.stdout.includes('Default model: cli-default'));
+    assert.ok(result.stdout.includes('Model catalog:'));
+  });
+
+  test('models lists the catalog', async () => {
+    const result = await runCLI(['config', 'models'], { env });
+
+    assert.strictEqual(result.code, 0);
+    assert.ok(result.stdout.includes('round-trip-model'));
+    assert.ok(result.stdout.includes('Total: 3 models'));
   });
 });
 

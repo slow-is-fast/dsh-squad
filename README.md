@@ -83,18 +83,42 @@ Each agent resolves its model at load time. Two files are supported:
 ```
 
 Agents without an entry fall back to `defaultModel`. Environment overrides:
-`DSH_HOME` (location of the DSH state directory) and `SQUAD_CONFIG_PATH`
-(path to the skill config file), both mainly useful in tests.
+`DSH_HOME` (location of the DSH state directory), `SQUAD_CONFIG_PATH` (path to
+the skill config file), and `SQUAD_MODELS_PATH` (path to the model catalog),
+mainly useful in tests.
+
+### Model catalog
+
+`config/models.json` lists the models this environment is known to expose. It is
+a static list — the CLI runs outside DSH and cannot query the live LLM catalog —
+so regenerate it from DSH when providers change, or edit it by hand. It is used
+to reject typos; `--force` writes a model that is not listed.
+
+```bash
+node bin/dsh-squad.mjs config models   # show the catalog and its source
+```
+
+### Commands
 
 ```bash
 # Show the effective configuration and which file is in use
 node bin/dsh-squad.mjs config show
 
+# Compact table of every agent's resolved model
+node bin/dsh-squad.mjs config list
+
 # Change one setting — writes to whichever file is active
 node bin/dsh-squad.mjs config set architect model deepseek-v4.1-flash
 node bin/dsh-squad.mjs config set architect thinking enabled   # or disabled
+node bin/dsh-squad.mjs config set architect tools "read,write" # comma list or JSON array
+node bin/dsh-squad.mjs config set architect model some-new-model --force
+
+# Remove one property, or the whole agent entry
+node bin/dsh-squad.mjs config unset architect thinking
+node bin/dsh-squad.mjs config unset architect
+
 node bin/dsh-squad.mjs config get architect
-node bin/dsh-squad.mjs config validate   # exit 1 on unknown agent or bad value
+node bin/dsh-squad.mjs config validate   # exit 1 on unknown agent, bad value, or unknown model
 ```
 
 DSH does not render a Settings page for skill-level configuration; the config
@@ -130,7 +154,7 @@ Errors exit non-zero with a stable code: `VALIDATION_ERROR`, `FILE_ERROR`,
 npm test    # node --test tests/*.test.mjs
 ```
 
-122 tests across four suites:
+156 tests across five suites:
 
 | Suite | Covers |
 |---|---|
@@ -154,9 +178,10 @@ dsh-squad/
 ├── agents/                   # 12 agent definitions
 ├── config/
 │   ├── squad.config.json     # Model configuration (skill-local)
-│   └── squad-templates.json  # Task suggestion templates
+│   ├── squad-templates.json  # Task suggestion templates
+│   └── models.json           # Known model catalog (typo guard)
 ├── examples/                 # Example task breakdowns
-└── tests/                    # 122 tests
+└── tests/                    # 156 tests
 ```
 
 ## How It Works

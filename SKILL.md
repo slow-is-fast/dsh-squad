@@ -46,8 +46,16 @@ Anything not configured falls back to `defaultModel`.
 `config set` always writes to the file that is actually in effect: the DSH
 overlay when it exists, otherwise the skill-local config, preserving that
 file's own format. `config show` prints the path it resolved. Environment
-overrides: `DSH_HOME` (DSH state directory) and `SQUAD_CONFIG_PATH` (skill
-config file), mainly for tests.
+overrides: `DSH_HOME` (DSH state directory), `SQUAD_CONFIG_PATH` (skill config
+file), `SQUAD_MODELS_PATH` (model catalog), mainly for tests.
+
+### Model catalog
+
+`config/models.json` lists the models this environment exposes. It is static —
+the CLI cannot query the live LLM catalog — so regenerate it from DSH when
+providers change. `config set <agent> model <name>` rejects a name that is not
+listed; add `--force` to write it anyway. `config validate` reports unlisted
+models as errors unless `--force` is passed.
 
 ### Managing config from the CLI
 
@@ -55,21 +63,32 @@ config file), mainly for tests.
 # Show the effective configuration and the file it came from
 node bin/dsh-squad.mjs config show
 
-# Set one agent's model / thinking mode (writes to the active file)
+# Compact table: every agent with its resolved model
+node bin/dsh-squad.mjs config list
+
+# Which models are known, and where that list came from
+node bin/dsh-squad.mjs config models
+
+# Set one agent's model / thinking mode / tools (writes to the active file)
 node bin/dsh-squad.mjs config set architect model deepseek-v4.1-flash
 node bin/dsh-squad.mjs config set architect thinking enabled   # or disabled
+node bin/dsh-squad.mjs config set architect tools "read,write"
+
+# Remove a property, or the whole agent entry
+node bin/dsh-squad.mjs config unset architect thinking
+node bin/dsh-squad.mjs config unset architect
 
 # Inspect the resolved value for one agent
 node bin/dsh-squad.mjs config get architect
 
-# Check for unknown agents and invalid values (exit 1 when invalid)
+# Check for unknown agents, invalid values, and unlisted models (exit 1)
 node bin/dsh-squad.mjs config validate
 ```
 
 Invalid input is rejected before anything is written: unknown agent name,
-unsupported property, empty or whitespace-containing model name, and thinking
-values other than `enabled`/`disabled` all exit non-zero with
-`VALIDATION_ERROR`.
+unsupported property, empty or whitespace-containing model name, unknown model,
+and thinking values other than `enabled`/`disabled` all exit non-zero with
+`VALIDATION_ERROR`. `unset` of something already absent is a no-op success.
 
 Note: DSH itself does not render a Settings UI for skill-level role config; the
 config files and the `config` CLI subcommand are the supported surface.

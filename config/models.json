@@ -1,0 +1,17 @@
+{
+  "description": "Models known to be reachable in this environment. Used by `config set` and `config validate` to reject typos. It is a static list: regenerate it from DSH (pstack_catalog) or edit by hand when providers change. Override the path with SQUAD_MODELS_PATH.",
+  "updated": "2026-11-05",
+  "providers": {
+    "bailian": [
+      "glm-5",
+      "qwen3.7-plus"
+    ],
+    "bailian-tpp": [
+      "glm-5.2",
+      "deepseek-v4.1-flash",
+      "glm-5.3",
+      "auto",
+      "deepseek-v4.1-flash-1017"
+    ]
+  }
+}

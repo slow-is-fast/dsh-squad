@@ -16,6 +16,7 @@ import {
   calculateTemplateScore,
   loadTaskTemplates
 } from '../lib/templates.mjs';
+import { loadAgents } from '../lib/core.mjs';
 import { ValidationError } from '../lib/errors.mjs';
 
 describe('calculateTemplateScore', () => {
@@ -161,7 +162,7 @@ describe('loadTaskTemplates', () => {
   test('falls back to built-in templates when the file is missing', () => {
     const fallback = loadTaskTemplates(join(tmpdir(), 'definitely-missing-templates.json'));
 
-    assert.strictEqual(fallback.templates.length, 5);
+    assert.strictEqual(fallback.templates.length, 6);
     assert.strictEqual(fallback.defaultTemplate.id, 'implement');
     assert.deepStrictEqual(fallback.settings, {
       maxSuggestions: 5,
@@ -179,9 +180,43 @@ describe('loadTaskTemplates', () => {
 
       const fallback = loadTaskTemplates(configPath);
 
-      assert.strictEqual(fallback.templates.length, 5);
+      assert.strictEqual(fallback.templates.length, 6);
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+describe('template integrity', () => {
+  test('every template targets an agent that exists', () => {
+    const agentNames = new Set(loadAgents().map(agent => agent.name));
+    const { templates } = loadTaskTemplates();
+
+    const dangling = templates
+      .filter(template => !agentNames.has(template.task.agent))
+      .map(template => `${template.id} -> ${template.task.agent}`);
+
+    assert.deepStrictEqual(dangling, []);
+  });
+
+  test('suggests a planning task for a planning goal', () => {
+    assert.deepStrictEqual(
+      suggestTasks('plan the migration roadmap').map(t => ({ id: t.id, agent: t.agent })),
+      [
+        { id: 'plan', agent: 'planner' },
+        { id: 'database', agent: 'backend' }
+      ]
+    );
+  });
+
+  test('planning suggestions carry no dependencies', () => {
+    const [plan] = suggestTasks('coordinate the release schedule');
+
+    assert.deepStrictEqual(plan, {
+      id: 'plan',
+      title: 'Plan task breakdown and sequencing',
+      description: 'Break the work into ordered milestones, identify dependencies and parallelizable parts',
+      agent: 'planner'
+    });
   });
 });

@@ -18,6 +18,8 @@ import {
   loadConfig,
   configSource,
   saveAgentConfig,
+  unsetAgentConfig,
+  loadModelCatalog,
   loadAgents,
   clearAgentsCache
 } from '../lib/core.mjs';
@@ -26,6 +28,7 @@ import { ValidationError } from '../lib/errors.mjs';
 const savedEnv = {
   DSH_HOME: process.env.DSH_HOME,
   SQUAD_CONFIG_PATH: process.env.SQUAD_CONFIG_PATH,
+  SQUAD_MODELS_PATH: process.env.SQUAD_MODELS_PATH,
   USERPROFILE: process.env.USERPROFILE,
   HOME: process.env.HOME
 };
@@ -33,6 +36,16 @@ const savedEnv = {
 let dir;
 let overlayPath;
 let projectPath;
+let modelsPath;
+const TEST_MODELS = [
+  'new-model', 'qa-model', 'written-model', 'before-model', 'after-model',
+  'project-model', 'catalog-model', 'tools-model'
+];
+
+function writeCatalog(models) {
+  writeFileSync(modelsPath, JSON.stringify({ providers: { test: models } }), 'utf-8');
+  process.env.SQUAD_MODELS_PATH = modelsPath;
+}
 
 function restoreEnv() {
   for (const [key, value] of Object.entries(savedEnv)) {
@@ -57,9 +70,11 @@ describe('config resolution', () => {
     dir = mkdtempSync(join(tmpdir(), 'squad-config-'));
     overlayPath = join(dir, 'dsh-squad.json');
     projectPath = join(dir, 'squad.config.json');
+    modelsPath = join(dir, 'models.json');
 
     process.env.DSH_HOME = dir;
     process.env.SQUAD_CONFIG_PATH = projectPath;
+    writeCatalog(TEST_MODELS);
 
     writeFileSync(projectPath, JSON.stringify({
       agents: { backend: { model: 'project-model' } },
@@ -175,9 +190,11 @@ describe('saveAgentConfig', () => {
     dir = mkdtempSync(join(tmpdir(), 'squad-config-write-'));
     overlayPath = join(dir, 'dsh-squad.json');
     projectPath = join(dir, 'squad.config.json');
+    modelsPath = join(dir, 'models.json');
 
     process.env.DSH_HOME = dir;
     process.env.SQUAD_CONFIG_PATH = projectPath;
+    writeCatalog(TEST_MODELS);
 
     writeFileSync(projectPath, JSON.stringify({
       agents: { backend: { model: 'project-model' } },
@@ -291,5 +308,232 @@ describe('saveAgentConfig', () => {
     });
 
     assert.strictEqual(loadAgents().find(a => a.name === 'backend').thinking, 'enabled');
+  });
+});
+
+function setupWriteEnv(prefix) {
+  dir = mkdtempSync(join(tmpdir(), prefix));
+  overlayPath = join(dir, 'dsh-squad.json');
+  projectPath = join(dir, 'squad.config.json');
+  modelsPath = join(dir, 'models.json');
+
+  process.env.DSH_HOME = dir;
+  process.env.SQUAD_CONFIG_PATH = projectPath;
+  writeCatalog(TEST_MODELS);
+
+  writeFileSync(projectPath, JSON.stringify({
+    agents: { backend: { model: 'project-model' } },
+    defaultModel: 'project-default',
+    settings: { maxParallelTasks: 9 }
+  }, null, 2), 'utf-8');
+
+  clearAgentsCache();
+}
+
+function teardownWriteEnv() {
+  clearAgentsCache();
+  rmSync(dir, { recursive: true, force: true });
+  restoreEnv();
+}
+
+describe('model catalog validation', () => {
+  beforeEach(() => setupWriteEnv('squad-config-models-'));
+  afterEach(teardownWriteEnv);
+
+  test('accepts a model listed in the catalog', () => {
+    saveAgentConfig('backend', 'model', 'catalog-model');
+
+    assert.strictEqual(loadConfig().agents.backend.model, 'catalog-model');
+  });
+
+  test('rejects an unknown model without touching the file', () => {
+    const before = readFileSync(projectPath, 'utf-8');
+
+    assert.throws(
+      () => saveAgentConfig('backend', 'model', 'typo-model'),
+      error => error instanceof ValidationError && /Unknown model: typo-model/.test(error.message)
+    );
+    assert.strictEqual(readFileSync(projectPath, 'utf-8'), before);
+  });
+
+  test('force writes an unknown model', () => {
+    saveAgentConfig('backend', 'model', 'typo-model', { force: true });
+
+    assert.strictEqual(loadConfig().agents.backend.model, 'typo-model');
+  });
+
+  test('skips the check when no catalog is available', () => {
+    process.env.SQUAD_MODELS_PATH = join(dir, 'no-such-models.json');
+
+    saveAgentConfig('backend', 'model', 'anything-goes');
+
+    assert.strictEqual(loadConfig().agents.backend.model, 'anything-goes');
+  });
+
+  test('maps models to their providers', () => {
+    writeFileSync(modelsPath, JSON.stringify({
+      providers: { alpha: ['m1'], beta: ['m1', 'm2'] }
+    }), 'utf-8');
+
+    const catalog = loadModelCatalog();
+
+    assert.strictEqual(catalog.path, modelsPath);
+    assert.deepStrictEqual(
+      [...catalog.models.entries()].sort(),
+      [['m1', ['alpha', 'beta']], ['m2', ['beta']]]
+    );
+  });
+
+  test('returns null for a broken catalog instead of throwing', () => {
+    writeFileSync(modelsPath, '{ broken', 'utf-8');
+
+    const originalError = console.error;
+    console.error = () => {};
+    let catalog;
+    try {
+      catalog = loadModelCatalog();
+    } finally {
+      console.error = originalError;
+    }
+
+    assert.strictEqual(catalog, null);
+  });
+});
+
+describe('tools property', () => {
+  beforeEach(() => setupWriteEnv('squad-config-tools-'));
+  afterEach(teardownWriteEnv);
+
+  test('accepts a comma-separated list', () => {
+    saveAgentConfig('backend', 'tools', 'read, write');
+
+    assert.deepStrictEqual(
+      JSON.parse(readFileSync(projectPath, 'utf-8')).agents.backend.tools,
+      ['read', 'write']
+    );
+  });
+
+  test('accepts a JSON array', () => {
+    saveAgentConfig('backend', 'tools', '["read","edit"]');
+
+    assert.deepStrictEqual(loadConfig().agents.backend.tools, ['read', 'edit']);
+  });
+
+  test('is applied by loadAgents', () => {
+    saveAgentConfig('backend', 'tools', 'read');
+
+    assert.deepStrictEqual(loadAgents().find(a => a.name === 'backend').tools, ['read']);
+  });
+
+  test('round-trips through the DSH overlay format', () => {
+    writeOverlay({
+      backend: { inherit: true, routes: [{ model: 'catalog-model' }], tools: ['read', 'write'] }
+    });
+
+    assert.deepStrictEqual(loadConfig().agents.backend.tools, ['read', 'write']);
+    assert.deepStrictEqual(loadAgents().find(a => a.name === 'backend').tools, ['read', 'write']);
+  });
+
+  test('rejects an empty list', () => {
+    assert.throws(() => saveAgentConfig('backend', 'tools', ''), ValidationError);
+    assert.throws(() => saveAgentConfig('backend', 'tools', '[]'), ValidationError);
+    assert.throws(() => saveAgentConfig('backend', 'tools', ',,'), ValidationError);
+  });
+
+  test('rejects malformed JSON', () => {
+    assert.throws(
+      () => saveAgentConfig('backend', 'tools', '["read",'),
+      error => error instanceof ValidationError && /Invalid tools JSON/.test(error.message)
+    );
+  });
+});
+
+describe('unsetAgentConfig', () => {
+  beforeEach(() => setupWriteEnv('squad-config-unset-'));
+  afterEach(teardownWriteEnv);
+
+  test('removes one property and keeps the rest', () => {
+    saveAgentConfig('backend', 'thinking', 'enabled');
+
+    const result = unsetAgentConfig('backend', 'thinking');
+
+    assert.strictEqual(result.removed, true);
+    assert.deepStrictEqual(
+      JSON.parse(readFileSync(projectPath, 'utf-8')).agents.backend,
+      { model: 'project-model' }
+    );
+  });
+
+  test('removes the whole agent entry', () => {
+    const result = unsetAgentConfig('backend');
+
+    assert.strictEqual(result.removed, true);
+    assert.strictEqual(
+      'backend' in JSON.parse(readFileSync(projectPath, 'utf-8')).agents,
+      false
+    );
+  });
+
+  test('is idempotent for an already unset property', () => {
+    const before = readFileSync(projectPath, 'utf-8');
+
+    const result = unsetAgentConfig('backend', 'tools');
+
+    assert.strictEqual(result.removed, false);
+    assert.strictEqual(readFileSync(projectPath, 'utf-8'), before);
+  });
+
+  test('removes thinking from the overlay but keeps the model', () => {
+    writeOverlay({
+      backend: {
+        inherit: true,
+        routes: [{ provider: 'bailian-tpp', model: 'catalog-model' }],
+        thinking: 'enabled'
+      }
+    });
+
+    unsetAgentConfig('backend', 'thinking');
+
+    assert.deepStrictEqual(readOverlay().roles.backend, {
+      inherit: true,
+      routes: [{ provider: 'bailian-tpp', model: 'catalog-model' }]
+    });
+  });
+
+  test('removing the model from the overlay drops the unusable route', () => {
+    writeOverlay({
+      backend: { inherit: true, routes: [{ model: 'catalog-model' }] }
+    });
+
+    unsetAgentConfig('backend', 'model');
+
+    assert.deepStrictEqual(readOverlay().roles.backend.routes, []);
+    // The overlay still wins over the skill config, but a role without a route
+    // no longer resolves, so the agent falls back to defaultModel.
+    assert.strictEqual(loadConfig().agents.backend, undefined);
+    assert.strictEqual(loadAgents().find(a => a.name === 'backend').model, 'glm-5.3');
+  });
+
+  test('removes a whole overlay role', () => {
+    writeOverlay({ backend: { inherit: true, routes: [{ model: 'catalog-model' }] } });
+
+    const result = unsetAgentConfig('backend');
+
+    assert.strictEqual(result.removed, true);
+    assert.strictEqual('backend' in readOverlay().roles, false);
+  });
+
+  test('rejects an unknown agent', () => {
+    assert.throws(
+      () => unsetAgentConfig('ghost'),
+      error => error instanceof ValidationError && /Unknown agent/.test(error.message)
+    );
+  });
+
+  test('rejects an unknown property', () => {
+    assert.throws(
+      () => unsetAgentConfig('backend', 'temperature'),
+      error => error instanceof ValidationError && /Unknown property/.test(error.message)
+    );
   });
 });

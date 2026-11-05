@@ -4,6 +4,19 @@
   "description": "Task templates for DSH Squad CLI suggestTasks function",
   "taskTemplates": [
     {
+      "id": "planning",
+      "keywords": ["plan", "planning", "roadmap", "milestone", "breakdown", "coordinate", "schedule"],
+      "task": {
+        "id": "plan",
+        "title": "Plan task breakdown and sequencing",
+        "description": "Break the work into ordered milestones, identify dependencies and parallelizable parts",
+        "agent": "planner",
+        "depends": []
+      },
+      "priority": 95,
+      "description": "Planning task - runs first, no dependencies"
+    },
+    {
       "id": "api-design",
       "keywords": ["api", "backend", "rest", "graphql", "server", "microservice"],
       "task": {
@@ -90,7 +103,7 @@
         "id": "performance",
         "title": "Performance optimization",
         "description": "Profile and optimize critical paths, implement caching strategies",
-        "agent": "performance",
+        "agent": "backend",
         "depends": ["design"]
       },
       "priority": 70,
