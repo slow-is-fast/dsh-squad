@@ -1,26 +1,91 @@
 {
   "name": "dsh-squad",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Multi-agent collaboration extension for DeepSeek Harness (DSH)",
   "type": "module",
-  "scripts": {
-    "test": "node --test tests/*.test.mjs"
-  },
+  "main": "lib/index.js",
+  "types": "lib/index.d.ts",
   "bin": {
     "dsh-squad": "./bin/dsh-squad.mjs"
   },
   "files": [
     "SKILL.md",
     "bin/",
-    "agents/"
+    "lib/",
+    "src/",
+    "agents/",
+    "config/",
+    "examples/",
+    "dshx.yml",
+    "cordis.yml"
   ],
+  "scripts": {
+    "test": "node --test tests/*.test.mjs",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
   "keywords": [
     "dsh",
     "dsh-skill",
+    "dsh-plugin",
     "multi-agent",
     "agent-collaboration",
     "task-management"
   ],
   "author": "dsh-squad",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/slow-is-fast/dsh-squad.git"
+  },
+  "homepage": "https://github.com/slow-is-fast/dsh-squad",
+  "engines": {
+    "node": ">=18.0.0",
+    "dsh": ">=0.2.1"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.yml"
+    }
+  },
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-agent": ">=0.2.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.1",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1",
+    "@deepseek-ai/dsh-llm": ">=0.2.1",
+    "@deepseek-ai/dsh-settings": ">=0.2.1",
+    "@deepseek-ai/dsh-skill": ">=0.2.1"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-agent": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-host-webserver": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-client-ui-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-llm": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-settings": {
+      "optional": true
+    },
+    "@deepseek-ai/dsh-skill": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "^4.0.4",
+    "@deepseek-ai/dsh-agent": ">=0.2.1",
+    "@deepseek-ai/dsh-host-webserver": ">=0.2.1",
+    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1",
+    "@deepseek-ai/dsh-llm": ">=0.2.1",
+    "@deepseek-ai/dsh-settings": ">=0.2.1",
+    "@deepseek-ai/dsh-skill": ">=0.2.1",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.0.0"
+  }
 }
