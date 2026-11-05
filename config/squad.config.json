@@ -1,0 +1,54 @@
+{
+  "agents": {
+    "architect": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    },
+    "backend": {
+      "model": "glm-5.3"
+    },
+    "frontend": {
+      "model": "glm-5.3"
+    },
+    "fullstack": {
+      "model": "glm-5.3"
+    },
+    "qa": {
+      "model": "glm-5"
+    },
+    "reviewer": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    },
+    "security": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    },
+    "debugger": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    },
+    "devops": {
+      "model": "glm-5.3"
+    },
+    "docs": {
+      "model": "glm-5"
+    },
+    "researcher": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    },
+    "planner": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    }
+  },
+  "defaultModel": "glm-5.3",
+  "settings": {
+    "maxParallelTasks": 5,
+    "taskTimeout": 600000,
+    "retryAttempts": 2,
+    "enableQA": true,
+    "enableHealthCheck": true
+  }
+}

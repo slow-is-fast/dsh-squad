@@ -3,11 +3,48 @@ name: dsh-squad
 description: Multi-agent collaboration for complex tasks. Decomposes work into tasks, assigns specialist agents, manages dependencies, runs in parallel with automatic QA rework loops. Use when tasks involve 2+ concerns (backend+frontend+tests+docs), have natural parallelism, or are too large for single-agent context.
 license: MIT
 metadata:
-  version: "1.0"
+  version: "1.1"
   author: dsh-squad
 ---
 
 # DSH Squad - Multi-Agent Collaboration
+
+## Configuration
+
+DSH Squad supports flexible model configuration for each agent.
+
+### Quick Configuration
+
+Edit `config/squad.config.json` to customize agent models:
+
+```json
+{
+  "agents": {
+    "architect": {
+      "model": "deepseek-v4.1-flash",
+      "thinking": "enabled"
+    }
+  },
+  "defaultModel": "glm-5.3"
+}
+```
+
+### Available Models
+
+- `deepseek-v4.1-flash` - Strong reasoning (recommended for complex tasks)
+- `glm-5.3` - Balanced performance (recommended for general development)
+- `glm-5` - Basic model (recommended for simple tasks)
+- `auto` - Automatic selection
+
+### Configuration Priority
+
+1. Environment variables (`SQUAD_ARCHITECT_MODEL`)
+2. Local config (`.squadrc.json`)
+3. Global config (`config/squad.config.json`)
+4. Agent defaults
+5. `defaultModel`
+
+See [CONFIG_GUIDE.md](CONFIG_GUIDE.md) for detailed configuration options.
 
 ## Overview
 
