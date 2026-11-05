@@ -19,9 +19,11 @@
 import { readFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname, normalize, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { writeFileSync } from 'node:fs';
 import { 
   loadTasks, 
   loadAgents, 
+  loadConfig,
   clearAgentsCache,
   validateTasks, 
   buildDependencyGraph, 
@@ -287,6 +289,110 @@ function validateCommand(tasksFile) {
     output(`Parallel tasks: ${countParallelTasks(graph, depths)}`);
   } else {
     throw new ValidationError('Task validation failed', errors.join('\n   '));
+  }
+}
+
+/**
+ * Config command - manage squad configuration
+ */
+function configCommand(action, ...args) {
+  const config = loadConfig();
+  
+  switch(action) {
+    case 'show':
+    case undefined:
+      if (jsonOutput) {
+        outputJson(config);
+      } else {
+        output('\n⚙️  DSH Squad Configuration\n');
+        output('Default Model:', config.defaultModel);
+        output('\nAgents:\n');
+        
+        const agents = Object.entries(config.agents);
+        if (agents.length === 0) {
+          output('  (using default model for all agents)\n');
+        } else {
+          for (const [name, cfg] of agents) {
+            output(`  ${name}:`);
+            output(`    model: ${cfg.model || '(default)'}`);
+            if (cfg.thinking) {
+              output(`    thinking: ${cfg.thinking}`);
+            }
+          }
+        }
+        
+        output('\nSettings:\n');
+        const settings = config.settings;
+        output(`  Max parallel tasks: ${settings.maxParallelTasks}`);
+        output(`  Task timeout: ${settings.taskTimeout}ms`);
+        output(`  Retry attempts: ${settings.retryAttempts}`);
+        output(`  QA enabled: ${settings.enableQA}`);
+        output(`  Health check: ${settings.enableHealthCheck}\n`);
+      }
+      break;
+      
+    case 'get': {
+      const agentName = args[0];
+      if (!agentName) {
+        throw new CommandError('Agent name required');
+      }
+      
+      const agentConfig = config.agents[agentName];
+      if (!agentConfig) {
+        output(`${agentName}: using default model (${config.defaultModel})`);
+        return;
+      }
+      
+      output(`\n${agentName} Configuration:\n`);
+      output(`  model: ${agentConfig.model || config.defaultModel}`);
+      if (agentConfig.thinking) {
+        output(`  thinking: ${agentConfig.thinking}`);
+      }
+      break;
+    }
+      
+    case 'set': {
+      const [agentName, property, value] = args;
+      if (!agentName || !property || !value) {
+        throw new CommandError('Usage: config set <agent> <property> <value>');
+      }
+      
+      const configPath = join(__dirname, '..', 'config', 'squad.config.json');
+      
+      if (!config.agents[agentName]) {
+        config.agents[agentName] = {};
+      }
+      
+      config.agents[agentName][property] = property === 'thinking' && value === 'enabled' ? 'enabled' : value;
+      
+      writeFileSync(configPath, JSON.stringify(config, null, 2));
+      output(`✓ Set ${agentName}.${property} = ${value}`);
+      clearAgentsCache();
+      break;
+    }
+      
+    case 'validate': {
+      const errors = [];
+      const agents = loadAgents();
+      const agentNames = new Set(agents.map(a => a.name));
+      
+      for (const name of Object.keys(config.agents)) {
+        if (!agentNames.has(name)) {
+          errors.push(`Unknown agent: ${name}`);
+        }
+      }
+      
+      if (errors.length === 0) {
+        output('✓ Configuration is valid');
+      } else {
+        output(`✗ Found ${errors.length} error(s):`);
+        errors.forEach(err => output(`  - ${err}`));
+      }
+      break;
+    }
+      
+    default:
+      throw new CommandError(`Unknown config action: ${action}`);
   }
 }
 
@@ -664,6 +770,7 @@ COMMANDS:
   agents      List available specialist agents
   validate    Validate a task breakdown JSON file
   deps        Show task dependency graph
+  config      Manage squad configuration
 
 OPTIONS:
   --help, -h     Show this help message
@@ -694,6 +801,11 @@ EXAMPLES:
   
   # With verbose output
   dsh-squad plan --goal "test" --verbose
+  
+  # Manage configuration
+  dsh-squad config show
+  dsh-squad config set architect model deepseek-v4.1-flash
+  dsh-squad config validate
 
 DOCUMENTATION:
   For more information, see SKILL.md or visit:
@@ -785,8 +897,12 @@ Examples:
         break;
       }
       
+      case 'config':
+        configCommand(...args.slice(1));
+        break;
+      
       default:
-        throw new CommandError(`Unknown command: ${command}`, `Available commands: plan, agents, validate, deps`);
+        throw new CommandError(`Unknown command: ${command}`, `Available commands: plan, agents, validate, deps, config`);
     }
   } catch (error) {
     formatError(error);
