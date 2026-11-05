@@ -43,22 +43,33 @@ Each agent's model is resolved at load time. Two config files are supported, in 
 
 Anything not configured falls back to `defaultModel`.
 
+`config set` always writes to the file that is actually in effect: the DSH
+overlay when it exists, otherwise the skill-local config, preserving that
+file's own format. `config show` prints the path it resolved. Environment
+overrides: `DSH_HOME` (DSH state directory) and `SQUAD_CONFIG_PATH` (skill
+config file), mainly for tests.
+
 ### Managing config from the CLI
 
 ```bash
-# Show the effective configuration
+# Show the effective configuration and the file it came from
 node bin/dsh-squad.mjs config show
 
-# Set one agent's model / thinking mode
+# Set one agent's model / thinking mode (writes to the active file)
 node bin/dsh-squad.mjs config set architect model deepseek-v4.1-flash
-node bin/dsh-squad.mjs config set architect thinking enabled
+node bin/dsh-squad.mjs config set architect thinking enabled   # or disabled
 
 # Inspect the resolved value for one agent
 node bin/dsh-squad.mjs config get architect
 
-# Check the file for unknown agents or invalid model names
+# Check for unknown agents and invalid values (exit 1 when invalid)
 node bin/dsh-squad.mjs config validate
 ```
+
+Invalid input is rejected before anything is written: unknown agent name,
+unsupported property, empty or whitespace-containing model name, and thinking
+values other than `enabled`/`disabled` all exit non-zero with
+`VALIDATION_ERROR`.
 
 Note: DSH itself does not render a Settings UI for skill-level role config; the
 config files and the `config` CLI subcommand are the supported surface.

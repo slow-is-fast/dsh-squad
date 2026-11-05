@@ -1,273 +1,144 @@
 /**
- * Tests for error classes and error handling
+ * Error hierarchy tests.
+ *
+ * These exercise the real classes in lib/errors.mjs and the real throw sites in
+ * lib/core.mjs. The previous version of this file re-declared the classes
+ * locally, so it passed even if the CLI had no error handling at all.
  */
 
-import { test, describe } from 'node:test';
+import { test, describe, before, after } from 'node:test';
 import assert from 'node:assert';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  SquadError,
+  ValidationError,
+  FileError,
+  ParseError,
+  CommandError
+} from '../lib/errors.mjs';
+import { loadTasks, validateTasks } from '../lib/core.mjs';
 
-// ============================================================================
-// Custom Error Classes
-// ============================================================================
+describe('error classes', () => {
+  test('SquadError carries message, code and details', () => {
+    const error = new SquadError('boom', 'X_ERROR', 'extra context');
 
-// We need to define these since they might not be exported
-class SquadError extends Error {
-  constructor(message, code, details = null) {
-    super(message);
-    this.name = 'SquadError';
-    this.code = code;
-    this.details = details;
-  }
-}
-
-class ValidationError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'VALIDATION_ERROR', details);
-    this.name = 'ValidationError';
-  }
-}
-
-class FileError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'FILE_ERROR', details);
-    this.name = 'FileError';
-  }
-}
-
-class ParseError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'PARSE_ERROR', details);
-    this.name = 'ParseError';
-  }
-}
-
-class CommandError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'COMMAND_ERROR', details);
-    this.name = 'CommandError';
-  }
-}
-
-// ============================================================================
-// SquadError Tests
-// ============================================================================
-
-describe('SquadError', () => {
-  test('should create error with message', () => {
-    const error = new SquadError('Test error', 'TEST_ERROR');
-    assert.strictEqual(error.message, 'Test error');
-    assert.strictEqual(error.code, 'TEST_ERROR');
+    assert.strictEqual(error.message, 'boom');
     assert.strictEqual(error.name, 'SquadError');
-  });
-
-  test('should include details', () => {
-    const error = new SquadError('Test error', 'TEST_ERROR', 'Additional info');
-    assert.strictEqual(error.details, 'Additional info');
-  });
-
-  test('should have null details by default', () => {
-    const error = new SquadError('Test error', 'TEST_ERROR');
-    assert.strictEqual(error.details, null);
-  });
-
-  test('should be instance of Error', () => {
-    const error = new SquadError('Test error', 'TEST_ERROR');
+    assert.strictEqual(error.code, 'X_ERROR');
+    assert.strictEqual(error.details, 'extra context');
     assert.ok(error instanceof Error);
   });
 
-  test('should preserve stack trace', () => {
-    const error = new SquadError('Test error', 'TEST_ERROR');
-    assert.ok(error.stack);
-    assert.ok(error.stack.includes('SquadError'));
+  test('SquadError defaults details to null', () => {
+    assert.strictEqual(new SquadError('boom', 'X_ERROR').details, null);
   });
-});
 
-// ============================================================================
-// ValidationError Tests
-// ============================================================================
+  test('ValidationError uses VALIDATION_ERROR', () => {
+    const error = new ValidationError('bad input', 'field: id');
 
-describe('ValidationError', () => {
-  test('should have correct code', () => {
-    const error = new ValidationError('Invalid input');
     assert.strictEqual(error.code, 'VALIDATION_ERROR');
-  });
-
-  test('should have correct name', () => {
-    const error = new ValidationError('Invalid input');
     assert.strictEqual(error.name, 'ValidationError');
-  });
-
-  test('should include details', () => {
-    const error = new ValidationError('Invalid filepath', 'Received: null');
-    assert.strictEqual(error.details, 'Received: null');
-  });
-
-  test('should be instance of SquadError', () => {
-    const error = new ValidationError('Invalid input');
+    assert.strictEqual(error.details, 'field: id');
     assert.ok(error instanceof SquadError);
   });
 
-  test('should be instance of Error', () => {
-    const error = new ValidationError('Invalid input');
-    assert.ok(error instanceof Error);
-  });
-});
+  test('FileError uses FILE_ERROR', () => {
+    const error = new FileError('cannot read', '/tmp/x.json');
 
-// ============================================================================
-// FileError Tests
-// ============================================================================
-
-describe('FileError', () => {
-  test('should have correct code', () => {
-    const error = new FileError('File not found');
     assert.strictEqual(error.code, 'FILE_ERROR');
-  });
-
-  test('should have correct name', () => {
-    const error = new FileError('File not found');
     assert.strictEqual(error.name, 'FileError');
-  });
-
-  test('should include file path in details', () => {
-    const error = new FileError('File not found', 'Path: /path/to/file');
-    assert.strictEqual(error.details, 'Path: /path/to/file');
-  });
-
-  test('should be instance of SquadError', () => {
-    const error = new FileError('File not found');
     assert.ok(error instanceof SquadError);
   });
-});
 
-// ============================================================================
-// ParseError Tests
-// ============================================================================
+  test('ParseError uses PARSE_ERROR', () => {
+    const error = new ParseError('bad json', 'position 1');
 
-describe('ParseError', () => {
-  test('should have correct code', () => {
-    const error = new ParseError('JSON parse error');
     assert.strictEqual(error.code, 'PARSE_ERROR');
-  });
-
-  test('should have correct name', () => {
-    const error = new ParseError('JSON parse error');
     assert.strictEqual(error.name, 'ParseError');
-  });
-
-  test('should include syntax error details', () => {
-    const error = new ParseError('Failed to parse JSON', 'Unexpected token at line 5');
-    assert.strictEqual(error.details, 'Unexpected token at line 5');
-  });
-
-  test('should be instance of SquadError', () => {
-    const error = new ParseError('Parse error');
     assert.ok(error instanceof SquadError);
   });
-});
 
-// ============================================================================
-// CommandError Tests
-// ============================================================================
+  test('CommandError uses COMMAND_ERROR', () => {
+    const error = new CommandError('unknown command', 'plan, agents');
 
-describe('CommandError', () => {
-  test('should have correct code', () => {
-    const error = new CommandError('Invalid command');
     assert.strictEqual(error.code, 'COMMAND_ERROR');
-  });
-
-  test('should have correct name', () => {
-    const error = new CommandError('Invalid command');
     assert.strictEqual(error.name, 'CommandError');
-  });
-
-  test('should include command details', () => {
-    const error = new CommandError('Unknown command', 'Command: unknown');
-    assert.strictEqual(error.details, 'Command: unknown');
-  });
-
-  test('should be instance of SquadError', () => {
-    const error = new CommandError('Command error');
     assert.ok(error instanceof SquadError);
   });
-});
 
-// ============================================================================
-// Error Handling Patterns
-// ============================================================================
+  test('subclasses are distinguishable by instanceof', () => {
+    const error = new FileError('missing');
 
-describe('Error Handling Patterns', () => {
-  test('should throw and catch ValidationError', () => {
-    assert.throws(
-      () => {
-        throw new ValidationError('Test validation');
-      },
-      (error) => {
-        assert.ok(error instanceof ValidationError);
-        assert.strictEqual(error.code, 'VALIDATION_ERROR');
-        return true;
-      }
-    );
-  });
-
-  test('should throw and catch FileError', () => {
-    assert.throws(
-      () => {
-        throw new FileError('Test file error');
-      },
-      (error) => {
-        assert.ok(error instanceof FileError);
-        assert.strictEqual(error.code, 'FILE_ERROR');
-        return true;
-      }
-    );
-  });
-
-  test('should distinguish error types', () => {
-    const errors = [
-      new ValidationError('Validation'),
-      new FileError('File'),
-      new ParseError('Parse'),
-      new CommandError('Command')
-    ];
-
-    for (const error of errors) {
-      assert.ok(error instanceof SquadError);
-      assert.ok(error instanceof Error);
-    }
-
-    assert.ok(errors[0] instanceof ValidationError);
-    assert.ok(errors[1] instanceof FileError);
-    assert.ok(errors[2] instanceof ParseError);
-    assert.ok(errors[3] instanceof CommandError);
-  });
-
-  test('should format error with details', () => {
-    const error = new ValidationError('Invalid input', 'Received: undefined');
-    const formatted = `${error.name} [${error.code}]: ${error.message}\nDetails: ${error.details}`;
-    
-    assert.ok(formatted.includes('ValidationError'));
-    assert.ok(formatted.includes('VALIDATION_ERROR'));
-    assert.ok(formatted.includes('Invalid input'));
-    assert.ok(formatted.includes('Received: undefined'));
+    assert.ok(error instanceof FileError);
+    assert.ok(!(error instanceof ValidationError));
+    assert.ok(!(error instanceof ParseError));
   });
 });
 
-// ============================================================================
-// Error Recovery
-// ============================================================================
+describe('real throw sites in lib/core.mjs', () => {
+  let dir;
 
-describe('Error Recovery', () => {
-  test('should create error with recovery info', () => {
-    const error = new FileError('File not found', 'Use valid path');
-    assert.ok(error.details);
+  before(() => {
+    dir = mkdtempSync(join(tmpdir(), 'squad-errors-'));
   });
 
-  test('should preserve error chain', () => {
-    const originalError = new Error('Original');
-    const wrappedError = new FileError(
-      'Failed to load file',
-      `Original: ${originalError.message}`
+  after(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  test('loadTasks rejects a non-string path as ValidationError', () => {
+    assert.throws(() => loadTasks(null), ValidationError);
+    assert.throws(() => loadTasks(''), ValidationError);
+    assert.throws(() => loadTasks(42), ValidationError);
+  });
+
+  test('loadTasks reports a missing file as FileError', () => {
+    assert.throws(
+      () => loadTasks(join(dir, 'nope.json')),
+      error => error instanceof FileError && /File not found/.test(error.message)
     );
-    
-    assert.ok(wrappedError.details.includes('Original'));
+  });
+
+  test('loadTasks reports broken JSON as ParseError', () => {
+    const file = join(dir, 'broken.json');
+    writeFileSync(file, '{ not json', 'utf-8');
+
+    assert.throws(
+      () => loadTasks(file),
+      error => error instanceof ParseError && error.code === 'PARSE_ERROR'
+    );
+  });
+
+  test('loadTasks rejects JSON without a tasks array as ValidationError', () => {
+    const file = join(dir, 'no-tasks.json');
+    writeFileSync(file, '{"foo":1}', 'utf-8');
+
+    assert.throws(
+      () => loadTasks(file),
+      error => error instanceof ValidationError && /"tasks" array/.test(error.message)
+    );
+  });
+
+  test('loadTasks accepts a top-level array', () => {
+    const file = join(dir, 'array.json');
+    writeFileSync(file, '[{"id":"a","agent":"backend"}]', 'utf-8');
+
+    assert.deepStrictEqual(loadTasks(file), [{ id: 'a', agent: 'backend' }]);
+  });
+
+  test('loadTasks accepts an object with a tasks array', () => {
+    const file = join(dir, 'wrapped.json');
+    writeFileSync(file, '{"tasks":[{"id":"a","agent":"backend"}]}', 'utf-8');
+
+    assert.deepStrictEqual(loadTasks(file), [{ id: 'a', agent: 'backend' }]);
+  });
+
+  test('validateTasks rejects a non-array instead of throwing a TypeError', () => {
+    assert.throws(
+      () => validateTasks({ foo: 1 }),
+      error => error instanceof ValidationError && /expects an array/.test(error.message)
+    );
   });
 });

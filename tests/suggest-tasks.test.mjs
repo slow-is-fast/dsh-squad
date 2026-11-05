@@ -1,338 +1,187 @@
 /**
- * Tests for suggestTasks and task template system
+ * Task suggestion tests.
+ *
+ * These call the real suggestTasks() from lib/templates.mjs. The previous
+ * version re-implemented keyword matching inside the test file, so it tested
+ * a copy of the logic rather than the logic itself.
  */
 
-import { test, describe, beforeEach, mock } from 'node:test';
+import { test, describe, before } from 'node:test';
 import assert from 'node:assert';
-import { readFileSync, existsSync, writeFileSync, mkdirSync, rmSync } from 'node:fs';
-import { join, dirname } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  suggestTasks,
+  calculateTemplateScore,
+  loadTaskTemplates
+} from '../lib/templates.mjs';
+import { ValidationError } from '../lib/errors.mjs';
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
+describe('calculateTemplateScore', () => {
+  test('scores priority times matched keyword count', () => {
+    const template = {
+      id: 'api',
+      keywords: ['api', 'backend', 'rest'],
+      priority: 90
+    };
+    const result = calculateTemplateScore(template, 'build a backend api');
 
-// Import the functions we need to test
-// Since these are not exported, we'll need to test through the public API
-// or create a separate testable module
+    assert.strictEqual(result.matched, true);
+    assert.deepStrictEqual(result.matchedKeywords, ['api', 'backend']);
+    assert.strictEqual(result.score, 180);
+  });
 
-// ============================================================================
-// Mock Configuration
-// ============================================================================
+  test('reports no match when no keyword is present', () => {
+    const template = { id: 'ui', keywords: ['react'], priority: 90 };
 
-const testConfigDir = join(__dirname, 'test-config');
-const testConfigPath = join(testConfigDir, 'squad-templates.json');
+    assert.deepStrictEqual(calculateTemplateScore(template, 'build an api'), {
+      matched: false,
+      score: 0,
+      matchedKeywords: []
+    });
+  });
 
-function createTestConfig() {
-  mkdirSync(testConfigDir, { recursive: true });
-  writeFileSync(testConfigPath, JSON.stringify({
-    taskTemplates: [
+  test('defaults priority to 50', () => {
+    const template = { id: 'x', keywords: ['api'] };
+
+    assert.strictEqual(calculateTemplateScore(template, 'api').score, 50);
+  });
+
+  test('matching is case-insensitive', () => {
+    const template = { id: 'x', keywords: ['API'], priority: 10 };
+
+    assert.strictEqual(calculateTemplateScore(template, 'build an api').score, 10);
+  });
+});
+
+describe('suggestTasks', () => {
+  test('builds an ordered breakdown for a backend goal', () => {
+    const tasks = suggestTasks('Build REST API with auth and tests');
+
+    assert.deepStrictEqual(
+      tasks.map(t => ({ id: t.id, agent: t.agent, depends: t.depends || [] })),
+      [
+        { id: 'design', agent: 'architect', depends: [] },
+        { id: 'backend', agent: 'backend', depends: ['design'] },
+        { id: 'frontend', agent: 'frontend', depends: ['design'] },
+        { id: 'security', agent: 'security', depends: ['design'] },
+        { id: 'tests', agent: 'qa', depends: ['backend', 'frontend', 'security'] }
+      ]
+    );
+  });
+
+  test('wires test and doc tasks to the implementation tasks', () => {
+    const tasks = suggestTasks('design a react frontend with tests and docs');
+
+    assert.deepStrictEqual(
+      tasks.map(t => ({ id: t.id, depends: t.depends || [] })),
+      [
+        { id: 'frontend', depends: [] },
+        { id: 'docs', depends: ['frontend'] },
+        { id: 'tests', depends: ['frontend'] }
+      ]
+    );
+  });
+
+  test('falls back to the default template when nothing matches', () => {
+    const tasks = suggestTasks('zzz nothing here');
+
+    assert.deepStrictEqual(tasks, [
       {
-        id: "test-api",
-        keywords: ["api", "backend"],
-        task: {
-          id: "test-api-task",
-          title: "Test API task",
-          agent: "backend",
-          depends: []
-        },
-        priority: 100
-      },
-      {
-        id: "test-frontend",
-        keywords: ["frontend", "react"],
-        task: {
-          id: "test-frontend-task",
-          title: "Test frontend task",
-          agent: "frontend",
-          depends: []
-        },
-        priority: 90
-      },
-      {
-        id: "test-security",
-        keywords: ["security", "auth"],
-        task: {
-          id: "test-security-task",
-          title: "Test security task",
-          agent: "security",
-          depends: ["test-api-task"]
-        },
-        priority: 80,
-        autoDepends: true
+        id: 'implement',
+        title: 'Implement feature',
+        description: 'Implement the requested feature with best practices',
+        agent: 'fullstack',
+        depends: []
       }
-    ],
-    defaultTemplate: {
-      id: "default",
-      title: "Default task",
-      agent: "fullstack",
-      depends: []
-    },
-    settings: {
+    ]);
+  });
+
+  test('never emits internal scoring metadata', () => {
+    const tasks = suggestTasks('Build REST API with auth and tests');
+
+    for (const task of tasks) {
+      assert.deepStrictEqual(
+        Object.keys(task).filter(key => key.startsWith('_')),
+        []
+      );
+    }
+  });
+
+  test('rejects a non-string goal', () => {
+    assert.throws(() => suggestTasks(null), ValidationError);
+  });
+
+  test('honours maxSuggestions from a custom template config', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'squad-templates-'));
+    try {
+      const configPath = join(dir, 'templates.json');
+      writeFileSync(configPath, JSON.stringify({
+        taskTemplates: [
+          {
+            id: 'low',
+            keywords: ['widget'],
+            priority: 10,
+            task: { id: 'low-task', title: 'Low', agent: 'backend', depends: [] }
+          },
+          {
+            id: 'high',
+            keywords: ['widget'],
+            priority: 90,
+            task: { id: 'high-task', title: 'High', agent: 'qa', depends: [] }
+          }
+        ],
+        defaultTemplate: { id: 'fallback', title: 'Fallback', agent: 'fullstack', depends: [] },
+        settings: { maxSuggestions: 1, minMatchScore: 1 }
+      }), 'utf-8');
+
+      const tasks = suggestTasks('build a widget', { configPath });
+
+      assert.deepStrictEqual(tasks.map(t => t.id), ['high-task']);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('loadTaskTemplates', () => {
+  let repoConfig;
+
+  before(() => {
+    repoConfig = loadTaskTemplates();
+  });
+
+  test('loads templates from the skill config file', () => {
+    assert.ok(repoConfig.templates.length >= 5);
+    assert.ok(repoConfig.templates.every(t => Array.isArray(t.keywords)));
+    assert.strictEqual(repoConfig.settings.maxSuggestions, 5);
+  });
+
+  test('falls back to built-in templates when the file is missing', () => {
+    const fallback = loadTaskTemplates(join(tmpdir(), 'definitely-missing-templates.json'));
+
+    assert.strictEqual(fallback.templates.length, 5);
+    assert.strictEqual(fallback.defaultTemplate.id, 'implement');
+    assert.deepStrictEqual(fallback.settings, {
       maxSuggestions: 5,
       minMatchScore: 1,
       keywordWeight: 1.0,
       priorityWeight: 0.01
-    }
-  }));
-}
-
-function cleanupTestConfig() {
-  if (existsSync(testConfigDir)) {
-    rmSync(testConfigDir, { recursive: true, force: true });
-  }
-}
-
-// ============================================================================
-// Template Loading Tests
-// ============================================================================
-
-describe('Task Template System', () => {
-  beforeEach(() => {
-    cleanupTestConfig();
+    });
   });
 
-  test('should load templates from config file', () => {
-    createTestConfig();
-    assert.ok(existsSync(testConfigPath));
-    
-    const content = readFileSync(testConfigPath, 'utf-8');
-    const config = JSON.parse(content);
-    
-    assert.ok(config.taskTemplates, 'Should have taskTemplates');
-    assert.strictEqual(config.taskTemplates.length, 3);
-    assert.ok(config.defaultTemplate, 'Should have defaultTemplate');
-    assert.ok(config.settings, 'Should have settings');
-  });
+  test('falls back when the config file is invalid JSON', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'squad-bad-templates-'));
+    try {
+      const configPath = join(dir, 'bad.json');
+      writeFileSync(configPath, '{ nope', 'utf-8');
 
-  test('should have correct template structure', () => {
-    createTestConfig();
-    const content = readFileSync(testConfigPath, 'utf-8');
-    const config = JSON.parse(content);
-    
-    for (const template of config.taskTemplates) {
-      assert.ok(template.id, 'Template should have id');
-      assert.ok(Array.isArray(template.keywords), 'Template should have keywords array');
-      assert.ok(template.task, 'Template should have task');
-      assert.ok(typeof template.priority === 'number', 'Template should have priority');
+      const fallback = loadTaskTemplates(configPath);
+
+      assert.strictEqual(fallback.templates.length, 5);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
     }
   });
-
-  test('should validate settings', () => {
-    createTestConfig();
-    const content = readFileSync(testConfigPath, 'utf-8');
-    const config = JSON.parse(content);
-    
-    assert.strictEqual(config.settings.maxSuggestions, 5);
-    assert.strictEqual(config.settings.minMatchScore, 1);
-  });
-});
-
-// ============================================================================
-// Keyword Matching Tests
-// ============================================================================
-
-describe('Keyword Matching Logic', () => {
-  test('should match single keyword', () => {
-    const keywords = ["api", "backend", "rest"];
-    const goal = "Build REST API";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 2);
-    assert.ok(matchedKeywords.includes("api"));
-    assert.ok(matchedKeywords.includes("rest"));
-  });
-
-  test('should match multiple keywords', () => {
-    const keywords = ["api", "backend", "database", "auth"];
-    const goal = "Build backend API with database and authentication";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    // "api", "backend", "database", "auth" (4 matches because "auth" is in "authentication")
-    assert.strictEqual(matchedKeywords.length, 4);
-  });
-
-  test('should not match non-existent keywords', () => {
-    const keywords = ["mobile", "ios", "android"];
-    const goal = "Build web application";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 0);
-  });
-
-  test('should handle partial keyword matches', () => {
-    const keywords = ["auth"];
-    const goal = "Add authentication";
-    const lowerGoal = goal.toLowerCase();
-    
-    // "auth" is in "authentication"
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 1);
-  });
-});
-
-// ============================================================================
-// Priority and Scoring Tests
-// ============================================================================
-
-describe('Template Scoring', () => {
-  test('should calculate score correctly', () => {
-    const template = {
-      keywords: ["api", "backend"],
-      priority: 100
-    };
-    const goal = "Build backend API";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = template.keywords.filter(kw => lowerGoal.includes(kw));
-    const score = template.priority * matchedKeywords.length;
-    
-    assert.strictEqual(score, 200); // 100 * 2 matches
-  });
-
-  test('should sort by score', () => {
-    const templates = [
-      { id: "low", keywords: ["api"], priority: 50, task: { id: "low" } },
-      { id: "high", keywords: ["api", "backend"], priority: 100, task: { id: "high" } },
-      { id: "medium", keywords: ["backend"], priority: 80, task: { id: "medium" } }
-    ];
-    
-    const goal = "Build backend API";
-    const lowerGoal = goal.toLowerCase();
-    
-    const scored = templates
-      .map(t => ({
-        ...t,
-        score: t.priority * t.keywords.filter(kw => lowerGoal.includes(kw)).length
-      }))
-      .sort((a, b) => b.score - a.score);
-    
-    assert.strictEqual(scored[0].id, "high");
-    assert.strictEqual(scored[1].id, "medium");
-    assert.strictEqual(scored[2].id, "low");
-  });
-});
-
-// ============================================================================
-// Auto-dependency Tests
-// ============================================================================
-
-describe('Auto Dependency Generation', () => {
-  test('should identify autoDepend tasks', () => {
-    const templates = [
-      { id: "api", autoDepends: false, task: { id: "api", depends: [] } },
-      { id: "tests", autoDepends: true, task: { id: "tests", depends: [] } }
-    ];
-    
-    const autoDependTemplates = templates.filter(t => t.autoDepends === true);
-    assert.strictEqual(autoDependTemplates.length, 1);
-  });
-
-  test('should auto-add dependencies to implementation tasks', () => {
-    const tasks = [
-      { id: "backend", agent: "backend", depends: [] },
-      { id: "frontend", agent: "frontend", depends: [] },
-      { id: "tests", agent: "qa", depends: [] } // Should auto-depend on backend and frontend
-    ];
-    
-    // Simulate auto-dependency logic
-    const implementationTasks = tasks.filter(t => 
-      t.agent === "backend" || t.agent === "frontend"
-    );
-    
-    const testTask = tasks.find(t => t.agent === "qa");
-    if (testTask && implementationTasks.length > 0) {
-      testTask.depends = implementationTasks.map(t => t.id);
-    }
-    
-    assert.strictEqual(testTask.depends.length, 2);
-    assert.ok(testTask.depends.includes("backend"));
-    assert.ok(testTask.depends.includes("frontend"));
-  });
-});
-
-// ============================================================================
-// Default Template Tests
-// ============================================================================
-
-describe('Default Template Fallback', () => {
-  test('should have default template', () => {
-    const config = {
-      defaultTemplate: {
-        id: "implement",
-        title: "Implement feature",
-        agent: "fullstack",
-        depends: []
-      }
-    };
-    
-    assert.ok(config.defaultTemplate);
-    assert.strictEqual(config.defaultTemplate.agent, "fullstack");
-  });
-
-  test('should use default when no matches', () => {
-    const templates = [
-      { keywords: ["mobile"], task: { id: "mobile" } }
-    ];
-    const defaultTemplate = { id: "default", agent: "fullstack", depends: [] };
-    const goal = "Random task description";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matched = templates.filter(t => 
-      t.keywords.some(kw => lowerGoal.includes(kw))
-    );
-    
-    const selectedTask = matched.length > 0 
-      ? matched[0].task 
-      : defaultTemplate;
-    
-    assert.strictEqual(selectedTask.id, "default");
-    assert.strictEqual(selectedTask.agent, "fullstack");
-  });
-});
-
-// ============================================================================
-// Edge Cases
-// ============================================================================
-
-describe('Edge Cases', () => {
-  test('should handle empty goal', () => {
-    const keywords = ["api"];
-    const goal = "";
-    const matchedKeywords = keywords.filter(kw => goal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 0);
-  });
-
-  test('should handle very long goal', () => {
-    const keywords = ["api"];
-    const goal = "api ".repeat(1000);
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 1);
-  });
-
-  test('should handle special characters in goal', () => {
-    const keywords = ["api"];
-    const goal = "Build API! @#$%^&*()";
-    const lowerGoal = goal.toLowerCase();
-    
-    const matchedKeywords = keywords.filter(kw => lowerGoal.includes(kw));
-    assert.strictEqual(matchedKeywords.length, 1);
-  });
-
-  test('should handle case insensitivity', () => {
-    const keywords = ["api"];
-    const goal = "Build API";
-    const lowerGoal = goal.toLowerCase();
-    
-    assert.ok(lowerGoal.includes("api"));
-    assert.ok(lowerGoal.includes("API".toLowerCase()));
-  });
-});
-
-// Cleanup after all tests
-process.on('exit', () => {
-  cleanupTestConfig();
 });

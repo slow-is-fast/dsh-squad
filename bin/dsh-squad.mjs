@@ -16,21 +16,23 @@
  * - COMMAND_ERROR: Invalid command or arguments
  */
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
-import { join, dirname, normalize, resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { writeFileSync } from 'node:fs';
 import { 
   loadTasks, 
   loadAgents, 
   loadConfig,
-  clearAgentsCache,
+  saveAgentConfig,
+  configSource,
   validateTasks, 
   buildDependencyGraph, 
   detectCycles, 
   calculateDepths, 
   countParallelTasks 
 } from '../lib/core.mjs';
+import { suggestTasks } from '../lib/templates.mjs';
+import { SquadError, ValidationError, CommandError } from '../lib/errors.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -93,47 +95,6 @@ function output(...args) {
 function outputJson(data) {
   if (jsonOutput) {
     console.log(JSON.stringify(data, null, 2));
-  }
-}
-
-// ============================================================================
-// Custom Error Classes
-// ============================================================================
-
-class SquadError extends Error {
-  constructor(message, code, details = null) {
-    super(message);
-    this.name = 'SquadError';
-    this.code = code;
-    this.details = details;
-  }
-}
-
-class ValidationError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'VALIDATION_ERROR', details);
-    this.name = 'ValidationError';
-  }
-}
-
-class FileError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'FILE_ERROR', details);
-    this.name = 'FileError';
-  }
-}
-
-class ParseError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'PARSE_ERROR', details);
-    this.name = 'ParseError';
-  }
-}
-
-class CommandError extends SquadError {
-  constructor(message, details = null) {
-    super(message, 'COMMAND_ERROR', details);
-    this.name = 'CommandError';
   }
 }
 
@@ -241,7 +202,9 @@ function agentsCommand() {
   output('\n🤖 Available Agents\n');
   
   for (const agent of agents) {
+    const thinking = agent.thinking ? ` (thinking: ${agent.thinking})` : '';
     output(`${agent.name.padEnd(12)} - ${agent.role}`);
+    output(`             Model: ${agent.model}${thinking}`);
     output(`             Tags: ${agent.tags.join(', ')}`);
     output(`             ${agent.description}`);
     output();
@@ -284,7 +247,8 @@ function validateCommand(tasksFile) {
     output(`Cycles: ${cycles.length === 0 ? 'None' : cycles.join(', ')}`);
     
     const depths = calculateDepths(graph);
-    const maxDepth = Math.max(...Object.values(depths));
+    const depthValues = Object.values(depths);
+    const maxDepth = depthValues.length === 0 ? 0 : Math.max(...depthValues);
     output(`Max depth: ${maxDepth}`);
     output(`Parallel tasks: ${countParallelTasks(graph, depths)}`);
   } else {
@@ -304,7 +268,9 @@ function configCommand(action, ...args) {
       if (jsonOutput) {
         outputJson(config);
       } else {
+        const source = configSource();
         output('\n⚙️  DSH Squad Configuration\n');
+        output(`Config file: ${source.path}`);
         output('Default Model:', config.defaultModel);
         output('\nAgents:\n');
         
@@ -356,37 +322,41 @@ function configCommand(action, ...args) {
       if (!agentName || !property || !value) {
         throw new CommandError('Usage: config set <agent> <property> <value>');
       }
-      
-      const configPath = join(__dirname, '..', 'config', 'squad.config.json');
-      
-      if (!config.agents[agentName]) {
-        config.agents[agentName] = {};
-      }
-      
-      config.agents[agentName][property] = property === 'thinking' && value === 'enabled' ? 'enabled' : value;
-      
-      writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+      const { path } = saveAgentConfig(agentName, property, value);
       output(`✓ Set ${agentName}.${property} = ${value}`);
-      clearAgentsCache();
+      output(`  Written to: ${path}`);
       break;
     }
       
     case 'validate': {
       const errors = [];
-      const agents = loadAgents();
-      const agentNames = new Set(agents.map(a => a.name));
-      
+      const agentNames = new Set(loadAgents().map(a => a.name));
+
       for (const name of Object.keys(config.agents)) {
         if (!agentNames.has(name)) {
           errors.push(`Unknown agent: ${name}`);
         }
       }
-      
+
+      for (const [name, cfg] of Object.entries(config.agents)) {
+        if (cfg.model !== undefined && (typeof cfg.model !== 'string' || cfg.model.trim() === '')) {
+          errors.push(`Agent ${name} has an invalid model value`);
+        }
+        if (cfg.thinking != null && cfg.thinking !== 'enabled' && cfg.thinking !== 'disabled') {
+          errors.push(`Agent ${name} has invalid thinking value: ${cfg.thinking}`);
+        }
+      }
+
+      const source = configSource();
+      output(`Config file: ${source.path}`);
+
       if (errors.length === 0) {
         output('✓ Configuration is valid');
       } else {
         output(`✗ Found ${errors.length} error(s):`);
         errors.forEach(err => output(`  - ${err}`));
+        process.exit(1);
       }
       break;
     }
@@ -433,248 +403,14 @@ function depsCommand(tasksFile) {
     byDepth[depth].push(taskId);
   }
   
-  for (let depth = 0; depth <= Math.max(...Object.values(depths)); depth++) {
-    const tasks = byDepth[depth] || [];
-    output(`Level ${depth}: ${tasks.join(', ')}`);
+  const depthValues = Object.values(depths);
+  const maxDepth = depthValues.length === 0 ? -1 : Math.max(...depthValues);
+
+  for (let depth = 0; depth <= maxDepth; depth++) {
+    const levelTasks = byDepth[depth] || [];
+    output(`Level ${depth}: ${levelTasks.join(', ')}`);
   }
   output();
-}
-
-// ============================================================================
-// Core Logic
-// ============================================================================
-
-/**
- * Load task templates from configuration file
- * @param {string} [configPath] - Optional custom config path
- * @returns {Object} Configuration object with templates and settings
- */
-function loadTaskTemplates(configPath = null) {
-  const defaultConfigPath = join(__dirname, '..', 'config', 'squad-templates.json');
-  const configFile = configPath || defaultConfigPath;
-  
-  try {
-    if (existsSync(configFile)) {
-      const content = readFileSync(configFile, 'utf-8');
-      const config = JSON.parse(content);
-      log('Loaded task templates from config:', configFile);
-      return {
-        templates: config.taskTemplates || [],
-        defaultTemplate: config.defaultTemplate || {
-          id: 'implement',
-          title: 'Implement feature',
-          agent: 'fullstack',
-          depends: []
-        },
-        settings: config.settings || {
-          maxSuggestions: 5,
-          minMatchScore: 1,
-          keywordWeight: 1.0,
-          priorityWeight: 0.01
-        }
-      };
-    }
-  } catch (error) {
-    console.error(`Warning: Failed to load config from ${configFile}: ${error.message}`);
-  }
-  
-  // Fallback to default templates if config not found or invalid
-  log('Using default templates (config not found or invalid)');
-  return {
-    templates: getDefaultTemplates(),
-    defaultTemplate: {
-      id: 'implement',
-      title: 'Implement feature',
-      agent: 'fullstack',
-      depends: []
-    },
-    settings: {
-      maxSuggestions: 5,
-      minMatchScore: 1,
-      keywordWeight: 1.0,
-      priorityWeight: 0.01
-    }
-  };
-}
-
-/**
- * Get default templates when config file is not available
- * @returns {Array} Default task templates
- */
-function getDefaultTemplates() {
-  return [
-    {
-      id: 'api-design',
-      keywords: ['api', 'backend', 'rest', 'graphql'],
-      task: {
-        id: 'design',
-        title: 'Design API contract and architecture',
-        agent: 'architect',
-        depends: []
-      },
-      priority: 100
-    },
-    {
-      id: 'backend-impl',
-      keywords: ['api', 'backend', 'server', 'database'],
-      task: {
-        id: 'backend',
-        title: 'Implement backend API',
-        agent: 'backend',
-        depends: ['design']
-      },
-      priority: 90
-    },
-    {
-      id: 'frontend-impl',
-      keywords: ['frontend', 'ui', 'react', 'vue', 'css'],
-      task: {
-        id: 'frontend',
-        title: 'Implement frontend UI',
-        agent: 'frontend',
-        depends: ['design']
-      },
-      priority: 90
-    },
-    {
-      id: 'qa-tests',
-      keywords: ['test', 'qa', 'testing', 'unit-test', 'e2e'],
-      task: {
-        id: 'tests',
-        title: 'Write tests',
-        agent: 'qa',
-        depends: []
-      },
-      priority: 50,
-      autoDepends: true
-    },
-    {
-      id: 'documentation',
-      keywords: ['doc', 'readme', 'documentation'],
-      task: {
-        id: 'docs',
-        title: 'Write documentation',
-        agent: 'docs',
-        depends: []
-      },
-      priority: 40,
-      autoDepends: true
-    }
-  ];
-}
-
-/**
- * Calculate match score for a template against a goal
- * @param {Object} template - Task template
- * @param {string} lowerGoal - Lowercase goal string
- * @returns {Object} Match result with score and matched keywords
- */
-function calculateTemplateScore(template, lowerGoal) {
-  const matchedKeywords = template.keywords.filter(kw => lowerGoal.includes(kw.toLowerCase()));
-  
-  if (matchedKeywords.length === 0) {
-    return { matched: false, score: 0, matchedKeywords: [] };
-  }
-  
-  // Score = priority * matched keyword count
-  const score = (template.priority || 50) * matchedKeywords.length;
-  
-  return {
-    matched: true,
-    score,
-    matchedKeywords,
-    template
-  };
-}
-
-/**
- * Suggest tasks based on goal
- * @param {string} goal - The goal description
- * @param {string} [configPath] - Optional custom config path
- * @returns {Task[]} Suggested tasks
- */
-function suggestTasks(goal, configPath = null) {
-  const lower = goal.toLowerCase();
-  const agents = loadAgents();
-  const { templates, defaultTemplate, settings } = loadTaskTemplates(configPath);
-  
-  log('Suggesting tasks for goal:', goal);
-  log('Available templates:', templates.length);
-  
-  // Match templates against goal
-  const matchedResults = templates
-    .map(template => calculateTemplateScore(template, lower))
-    .filter(result => result.matched && result.score >= (settings.minMatchScore || 1));
-  
-  log('Matched templates:', matchedResults.length);
-  
-  // Sort by score descending
-  matchedResults.sort((a, b) => b.score - a.score);
-  
-  // Take top N suggestions
-  const topMatches = matchedResults.slice(0, settings.maxSuggestions || 5);
-  
-  // Extract tasks from matched templates
-  const tasks = topMatches.map(match => {
-    const task = { ...match.template.task };
-    
-    // Deep copy arrays
-    if (task.depends) {
-      task.depends = [...task.depends];
-    }
-    
-    // Add temporary metadata for dependency resolution
-    task._matchedKeywords = match.matchedKeywords;
-    task._matchScore = match.score;
-    task._autoDepends = match.template.autoDepends;
-    
-    return task;
-  });
-  
-  // Process auto-dependencies for templates like tests/docs
-  tasks.forEach(task => {
-    // If template has autoDepends, link to implementation tasks
-    if (task._autoDepends) {
-      const implTasks = tasks.filter(t => 
-        t.id !== task.id && 
-        t.agent !== 'architect' && 
-        !t._autoDepends
-      );
-      
-      if (implTasks.length > 0) {
-        task.depends = implTasks.map(t => t.id);
-      }
-    }
-  });
-  
-  // Validate dependencies exist in task list
-  const taskIds = new Set(tasks.map(t => t.id));
-  tasks.forEach(task => {
-    if (task.depends && task.depends.length > 0) {
-      task.depends = task.depends.filter(depId => taskIds.has(depId));
-    }
-    // Remove empty depends array
-    if (task.depends && task.depends.length === 0) {
-      delete task.depends;
-    }
-  });
-  
-  // Clean up internal metadata
-  tasks.forEach(task => {
-    delete task._matchedKeywords;
-    delete task._matchScore;
-    delete task._autoDepends;
-  });
-  
-  // Default if no matches
-  if (tasks.length === 0 && defaultTemplate) {
-    tasks.push({ ...defaultTemplate });
-    log('No matches, using default template');
-  }
-  
-  log('Generated', tasks.length, 'tasks');
-  
-  return tasks;
 }
 
 /**
@@ -705,7 +441,8 @@ function printExecutionOrder(tasks) {
     byDepth[depth].push(taskId);
   }
   
-  const maxDepth = Math.max(...Object.values(depths));
+  const depthValues = Object.values(depths);
+  const maxDepth = depthValues.length === 0 ? -1 : Math.max(...depthValues);
   
   for (let depth = 0; depth <= maxDepth; depth++) {
     const levelTasks = byDepth[depth] || [];
@@ -752,7 +489,7 @@ function main() {
         const pkg = JSON.parse(readFileSync(packagePath, 'utf-8'));
         console.log(`dsh-squad v${pkg.version}`);
       } catch {
-        console.log('dsh-squad v1.0.0');
+        console.log('dsh-squad v0.0.0');
       }
       process.exit(0);
     }
@@ -809,7 +546,7 @@ EXAMPLES:
 
 DOCUMENTATION:
   For more information, see SKILL.md or visit:
-  https://github.com/picassio/pi-squad
+  https://github.com/slow-is-fast/dsh-squad
 
 LICENSE:
   MIT

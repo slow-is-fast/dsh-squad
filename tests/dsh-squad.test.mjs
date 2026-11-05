@@ -4,6 +4,8 @@
 
 import { test, describe, beforeEach, mock } from 'node:test';
 import assert from 'node:assert';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { 
   loadAgents,
   loadTasks,
@@ -13,6 +15,8 @@ import {
   calculateDepths,
   countParallelTasks
 } from '../lib/core.mjs';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ============================================================================
 // loadAgents() Tests
@@ -98,9 +102,14 @@ describe('loadTasks', () => {
   });
   
   test('should load valid task file', () => {
-    // This test would require a test fixture file
-    // For now, we'll skip it or use a mock
-    // See integration tests for file loading
+    const tasks = loadTasks(join(__dirname, '..', 'examples', 'tasks.json'));
+
+    assert.ok(Array.isArray(tasks));
+    assert.ok(tasks.length > 0, 'example file should contain tasks');
+    assert.ok(
+      tasks.every(task => typeof task.id === 'string' && typeof task.agent === 'string'),
+      'every task needs an id and an agent'
+    );
   });
 });
 
