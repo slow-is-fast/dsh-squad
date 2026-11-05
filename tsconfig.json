@@ -10,8 +10,6 @@
     "declaration": true,
     "outDir": "./lib",
     "rootDir": "./src",
-    "allowImportingTsExtensions": true,
-    "noEmit": false,
     "resolveJsonModule": true,
     "allowJs": true
   },
