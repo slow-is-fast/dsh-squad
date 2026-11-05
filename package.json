@@ -48,43 +48,7 @@
       "patch": "./cordis.yml"
     }
   },
-  "peerDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-agent": ">=0.2.1",
-    "@deepseek-ai/dsh-host-webserver": ">=0.2.1",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1",
-    "@deepseek-ai/dsh-llm": ">=0.2.1",
-    "@deepseek-ai/dsh-settings": ">=0.2.1",
-    "@deepseek-ai/dsh-skill": ">=0.2.1"
-  },
-  "peerDependenciesMeta": {
-    "@deepseek-ai/dsh-agent": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-host-webserver": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-client-ui-settings": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-llm": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-settings": {
-      "optional": true
-    },
-    "@deepseek-ai/dsh-skill": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@deepseek-ai/cordis": "^4.0.4",
-    "@deepseek-ai/dsh-agent": ">=0.2.1",
-    "@deepseek-ai/dsh-host-webserver": ">=0.2.1",
-    "@deepseek-ai/dsh-client-ui-settings": ">=0.2.1",
-    "@deepseek-ai/dsh-llm": ">=0.2.1",
-    "@deepseek-ai/dsh-settings": ">=0.2.1",
-    "@deepseek-ai/dsh-skill": ">=0.2.1",
     "@types/node": "^22.0.0",
     "typescript": "^5.0.0"
   }

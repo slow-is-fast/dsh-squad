@@ -3,10 +3,9 @@
  * Registers HTTP endpoints for Settings UI
  */
 
-import type { Context } from '@deepseek-ai/cordis'
+import { SETTINGS_SECTION_ID, OVERLAY_FILE } from './ids.js'
 import { join } from 'node:path'
 import { readFileSync, existsSync, writeFileSync } from 'node:fs'
-import { SETTINGS_SECTION_ID, OVERLAY_FILE } from './ids.ts'
 
 interface RoleConfig {
   inherit: boolean
@@ -23,10 +22,10 @@ interface SquadConfig {
   roles: Record<string, RoleConfig>
 }
 
-const DSH_HOME = process.env.DSH_HOME || join(process.env.USERPROFILE || process.env.HOME, '.dsh')
+const DSH_HOME = process.env.DSH_HOME || join(process.env.USERPROFILE || process.env.HOME || '', '.dsh')
 const CONFIG_PATH = join(DSH_HOME, OVERLAY_FILE)
 
-export function registerSquadSettingsRoutes(ctx: Context): void {
+export function registerSquadSettingsRoutes(ctx: any): void {
   const logger = ctx.logger('dsh-squad-settings')
   
   // Register settings section
@@ -56,7 +55,7 @@ export function registerSquadSettingsRoutes(ctx: Context): void {
   })
   
   // PUT /plugins/dsh-squad/settings
-  ctx.webServer.put('/plugins/dsh-squad/settings', async (req) => {
+  ctx.webServer.put('/plugins/dsh-squad/settings', async (req: any) => {
     try {
       const config = req.body as SquadConfig
       
