@@ -1,0 +1,29 @@
+{
+  "goal": "Review and improve code quality in dsh-squad project",
+  "tasks": [
+    {
+      "id": "review-code",
+      "title": "Review code quality and identify issues",
+      "description": "Goal: Review the dsh-squad codebase for quality issues\n\nContext:\n- Read all TypeScript/JavaScript files in src/ and bin/\n- Check for code quality issues\n- Identify potential bugs\n- Suggest improvements\n\nOutput:\n- Review report with specific issues\n- Recommendations for improvements\n\nBoundaries:\n- Read-only review, do NOT modify code\n- Focus on correctness and quality\n\nVerify: Review report is complete\n\n## IMPORTANT: End with verdict format:\n## Verdict: APPROVE | REQUEST CHANGES\n## Issues: (if any)",
+      "agent": "reviewer",
+      "depends": []
+    },
+    {
+      "id": "security-audit",
+      "title": "Perform security audit",
+      "description": "Goal: Identify security vulnerabilities in the codebase\n\nContext:\n- Check for common security issues\n- Review file handling and permissions\n- Look for injection vulnerabilities\n- Check for hardcoded secrets\n\nOutput:\n- Security audit report\n- List of vulnerabilities\n- Remediation suggestions\n\nBoundaries:\n- Read-only audit\n- Focus on security issues\n\nVerify: Security report is complete",
+      "agent": "security",
+      "depends": []
+    },
+    {
+      "id": "fix-issues",
+      "title": "Fix identified issues",
+      "description": "Goal: Fix issues identified in review and security audit\n\nContext:\n- Use reports from review-code and security-audit tasks\n- Fix each issue systematically\n- Verify fixes work\n\nOutput:\n- Fixed code\n- Updated tests if needed\n\nBoundaries:\n- Only fix reported issues\n- Maintain existing functionality\n\nVerify: All reported issues are resolved",
+      "agent": "debugger",
+      "depends": ["review-code", "security-audit"]
+    }
+  ],
+  "config": {
+    "maxConcurrency": 2
+  }
+}

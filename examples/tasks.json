@@ -1,0 +1,43 @@
+{
+  "goal": "Build a REST API with authentication, tests, and documentation",
+  "tasks": [
+    {
+      "id": "design",
+      "title": "Design API contract and database schema",
+      "description": "Goal: Define clear API contract and database schema\n\nContext:\n- Read existing project structure\n- Define REST endpoints\n- Design database tables\n\nOutput:\n- docs/api-design.md with API contract\n- database/schema.sql with table definitions\n\nBoundaries:\n- Keep schema simple and normalized\n\nVerify: Schema validates and API doc is complete",
+      "agent": "architect",
+      "depends": []
+    },
+    {
+      "id": "backend-auth",
+      "title": "Implement authentication endpoints",
+      "description": "Goal: Implement login, register, and JWT verification\n\nContext:\n- Use API contract from design task\n- Use database schema for users table\n- Implement JWT token generation\n\nOutput:\n- src/auth/login.js - Login endpoint\n- src/auth/register.js - Register endpoint\n- src/auth/middleware.js - JWT verification\n- tests/auth.test.js - Auth tests\n\nBoundaries:\n- Do NOT modify database schema\n- Keep under 150 lines per file\n\nVerify: npm test tests/auth.test.js",
+      "agent": "backend",
+      "depends": ["design"]
+    },
+    {
+      "id": "backend-crud",
+      "title": "Implement CRUD endpoints",
+      "description": "Goal: Implement CRUD operations for main resources\n\nContext:\n- Use API contract from design task\n- Use existing database connection\n- Implement proper error handling\n\nOutput:\n- src/routes/resource.js - CRUD endpoints\n- tests/routes.test.js - Route tests\n\nBoundaries:\n- Follow API contract exactly\n- Use proper HTTP status codes\n\nVerify: npm test tests/routes.test.js",
+      "agent": "backend",
+      "depends": ["design"]
+    },
+    {
+      "id": "tests",
+      "title": "Write comprehensive tests",
+      "description": "Goal: Ensure all endpoints are tested and working\n\nContext:\n- Test all authentication endpoints\n- Test all CRUD endpoints\n- Test error cases\n\nOutput:\n- Complete test suite\n- Test report with verdict\n\nBoundaries:\n- Test behavior, not implementation\n- All tests must pass\n\nVerify: npm test\n\n## IMPORTANT: End with verdict format:\n## Verdict: PASS | PASS WITH ISSUES | FAIL\n## Issues: (if any)",
+      "agent": "qa",
+      "depends": ["backend-auth", "backend-crud"]
+    },
+    {
+      "id": "docs",
+      "title": "Write API documentation",
+      "description": "Goal: Create complete API documentation\n\nContext:\n- Use API contract from design task\n- Document all endpoints\n- Include request/response examples\n\nOutput:\n- docs/api.md - Complete API documentation\n- README.md update with API info\n\nBoundaries:\n- Keep examples up-to-date\n- Document all error codes\n\nVerify: Documentation is complete and accurate",
+      "agent": "docs",
+      "depends": ["backend-auth", "backend-crud"]
+    }
+  ],
+  "config": {
+    "maxConcurrency": 2
+  }
+}

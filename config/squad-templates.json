@@ -1,0 +1,165 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "version": "1.0.0",
+  "description": "Task templates for DSH Squad CLI suggestTasks function",
+  "taskTemplates": [
+    {
+      "id": "api-design",
+      "keywords": ["api", "backend", "rest", "graphql", "server", "microservice"],
+      "task": {
+        "id": "design",
+        "title": "Design API contract and architecture",
+        "description": "Create API design document with endpoints, data models, and integration patterns",
+        "agent": "architect",
+        "depends": []
+      },
+      "priority": 100,
+      "description": "API/Backend architecture design task"
+    },
+    {
+      "id": "backend-impl",
+      "keywords": ["api", "backend", "server", "database", "rest", "graphql", "microservice"],
+      "task": {
+        "id": "backend",
+        "title": "Implement backend API",
+        "description": "Build backend services with proper error handling and data validation",
+        "agent": "backend",
+        "depends": ["design"]
+      },
+      "priority": 90,
+      "description": "Backend implementation task"
+    },
+    {
+      "id": "frontend-impl",
+      "keywords": ["frontend", "ui", "react", "vue", "angular", "css", "web", "interface"],
+      "task": {
+        "id": "frontend",
+        "title": "Implement frontend UI",
+        "description": "Build responsive user interface with proper state management",
+        "agent": "frontend",
+        "depends": ["design"]
+      },
+      "priority": 90,
+      "description": "Frontend implementation task"
+    },
+    {
+      "id": "qa-tests",
+      "keywords": ["test", "qa", "testing", "unit-test", "e2e", "spec", "coverage"],
+      "task": {
+        "id": "tests",
+        "title": "Write tests",
+        "description": "Create comprehensive test suite including unit, integration, and e2e tests",
+        "agent": "qa",
+        "depends": []
+      },
+      "priority": 50,
+      "autoDepends": true,
+      "description": "Testing task - auto-depends on implementation tasks"
+    },
+    {
+      "id": "documentation",
+      "keywords": ["doc", "docs", "readme", "documentation", "guide", "manual"],
+      "task": {
+        "id": "docs",
+        "title": "Write documentation",
+        "description": "Create user guides, API documentation, and code comments",
+        "agent": "docs",
+        "depends": []
+      },
+      "priority": 40,
+      "autoDepends": true,
+      "description": "Documentation task - auto-depends on implementation tasks"
+    },
+    {
+      "id": "security-audit",
+      "keywords": ["security", "audit", "vulnerability", "auth", "authentication", "authorization"],
+      "task": {
+        "id": "security",
+        "title": "Security audit and hardening",
+        "description": "Review security practices, fix vulnerabilities, implement secure patterns",
+        "agent": "security",
+        "depends": ["design"]
+      },
+      "priority": 80,
+      "description": "Security review task"
+    },
+    {
+      "id": "performance",
+      "keywords": ["performance", "optimize", "speed", "latency", "cache", "scale"],
+      "task": {
+        "id": "performance",
+        "title": "Performance optimization",
+        "description": "Profile and optimize critical paths, implement caching strategies",
+        "agent": "performance",
+        "depends": ["design"]
+      },
+      "priority": 70,
+      "description": "Performance optimization task"
+    },
+    {
+      "id": "database",
+      "keywords": ["database", "db", "sql", "nosql", "migration", "schema", "query"],
+      "task": {
+        "id": "database",
+        "title": "Database design and implementation",
+        "description": "Design schema, write migrations, optimize queries",
+        "agent": "backend",
+        "depends": ["design"]
+      },
+      "priority": 85,
+      "description": "Database task"
+    },
+    {
+      "id": "mobile",
+      "keywords": ["mobile", "ios", "android", "react-native", "flutter", "app"],
+      "task": {
+        "id": "mobile",
+        "title": "Build mobile application",
+        "description": "Implement mobile app with native features and responsive design",
+        "agent": "frontend",
+        "depends": ["design"]
+      },
+      "priority": 90,
+      "description": "Mobile development task"
+    },
+    {
+      "id": "devops",
+      "keywords": ["deploy", "deployment", "ci", "cd", "pipeline", "docker", "kubernetes", "infra"],
+      "task": {
+        "id": "devops",
+        "title": "Setup CI/CD and deployment",
+        "description": "Configure build pipelines, deployment automation, and infrastructure",
+        "agent": "devops",
+        "depends": []
+      },
+      "priority": 60,
+      "description": "DevOps/Infrastructure task"
+    },
+    {
+      "id": "refactoring",
+      "keywords": ["refactor", "cleanup", "improve", "maintain", "technical-debt"],
+      "task": {
+        "id": "refactor",
+        "title": "Code refactoring and cleanup",
+        "description": "Improve code structure, reduce technical debt, enhance maintainability",
+        "agent": "architect",
+        "depends": []
+      },
+      "priority": 30,
+      "description": "Refactoring task"
+    }
+  ],
+  "defaultTemplate": {
+    "id": "implement",
+    "title": "Implement feature",
+    "description": "Implement the requested feature with best practices",
+    "agent": "fullstack",
+    "depends": []
+  },
+  "settings": {
+    "maxSuggestions": 5,
+    "minMatchScore": 1,
+    "keywordWeight": 1.0,
+    "priorityWeight": 0.01
+  }
+}
