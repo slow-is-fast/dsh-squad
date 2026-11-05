@@ -1,0 +1,4 @@
+# portable overlay: relative name only. dshx start/verify rewrite it to an absolute --patch.
+- insert:
+    - id: dsh-squad
+      name: './src/index.ts'
