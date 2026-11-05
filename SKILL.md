@@ -3,48 +3,65 @@ name: dsh-squad
 description: Multi-agent collaboration for complex tasks. Decomposes work into tasks, assigns specialist agents, manages dependencies, runs in parallel with automatic QA rework loops. Use when tasks involve 2+ concerns (backend+frontend+tests+docs), have natural parallelism, or are too large for single-agent context.
 license: MIT
 metadata:
-  version: "1.1"
+  version: "1.2"
   author: dsh-squad
 ---
 
 # DSH Squad - Multi-Agent Collaboration
 
-## Configuration
+## Agent Model Configuration
 
-DSH Squad supports flexible model configuration for each agent.
+Each agent's model is resolved at load time. Two config files are supported, in this order:
 
-### Quick Configuration
+**1. Global (takes precedence): `~/.dsh/dsh-squad.json`**
 
-Edit `config/squad.config.json` to customize agent models:
+```json
+{
+  "version": 1,
+  "roles": {
+    "architect": {
+      "routes": [{ "provider": "bailian-tpp", "model": "deepseek-v4.1-flash" }],
+      "thinking": "enabled"
+    },
+    "backend": {
+      "routes": [{ "provider": "bailian-tpp", "model": "glm-5.3" }]
+    }
+  }
+}
+```
+
+**2. Skill-local: `config/squad.config.json`**
 
 ```json
 {
   "agents": {
-    "architect": {
-      "model": "deepseek-v4.1-flash",
-      "thinking": "enabled"
-    }
+    "architect": { "model": "deepseek-v4.1-flash", "thinking": "enabled" }
   },
   "defaultModel": "glm-5.3"
 }
 ```
 
-### Available Models
+Anything not configured falls back to `defaultModel`.
 
-- `deepseek-v4.1-flash` - Strong reasoning (recommended for complex tasks)
-- `glm-5.3` - Balanced performance (recommended for general development)
-- `glm-5` - Basic model (recommended for simple tasks)
-- `auto` - Automatic selection
+### Managing config from the CLI
 
-### Configuration Priority
+```bash
+# Show the effective configuration
+node bin/dsh-squad.mjs config show
 
-1. Environment variables (`SQUAD_ARCHITECT_MODEL`)
-2. Local config (`.squadrc.json`)
-3. Global config (`config/squad.config.json`)
-4. Agent defaults
-5. `defaultModel`
+# Set one agent's model / thinking mode
+node bin/dsh-squad.mjs config set architect model deepseek-v4.1-flash
+node bin/dsh-squad.mjs config set architect thinking enabled
 
-See [CONFIG_GUIDE.md](CONFIG_GUIDE.md) for detailed configuration options.
+# Inspect the resolved value for one agent
+node bin/dsh-squad.mjs config get architect
+
+# Check the file for unknown agents or invalid model names
+node bin/dsh-squad.mjs config validate
+```
+
+Note: DSH itself does not render a Settings UI for skill-level role config; the
+config files and the `config` CLI subcommand are the supported surface.
 
 ## Overview
 
